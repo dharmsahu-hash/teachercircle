@@ -47,171 +47,123 @@ in the repo's `README.md`.
 
 ---
 
-## Part B — Production (free)
+## Part B — Production (free, no credit card)
 
-### Accounts needed (all $0)
+**Superseded plan, kept below for history**: the original version of this section
+documented an Oracle Cloud Free Tier VM + DuckDNS + Caddy. That's blocked for this
+deployment — Oracle's Always Free tier still requires a card for identity
+verification, and the user deploying this has none. Researched alternatives
+(DigitalOcean, Fly.io, Netlify, Render) before landing here — all either require a
+card outright, or (Render) delete free Postgres databases after ~44 days, unusable
+for a real database. See the git history of this file for the old VM instructions if
+you ever do get a VM with a card.
 
-| Account | Cost | Note |
-|---|---|---|
-| Oracle Cloud Free Tier | $0 | Card required for identity verification; Always Free resources are never billed while you stay within them |
-| DuckDNS | $0 | Free subdomain, real DNS, works with Let's Encrypt |
-| Google Cloud Console | $0 | OAuth client creation is free and unmetered |
-| Cloudflare (optional) | $0 | CDN/WAF in front of the DuckDNS hostname |
+**Current plan: Vercel (app) + Supabase Cloud (Postgres + GoTrue + PostgREST,
+managed).** Both confirmed free with no credit card. This isn't a different stack —
+Supabase Cloud *is* Postgres+GoTrue+PostgREST, hosted; `db/migrations/*.sql` applies
+almost unchanged. Meilisearch/Redis/MinIO are dropped entirely for this
+deployment — none of them are actually wired into the app yet (see the "not wired
+yet" list in `README.md`), so this costs nothing.
 
-### Step 1 — Provision the VM
+### Accounts needed (all $0, no card)
 
-```bash
-# Oracle Cloud console: Compute → Instances → Create Instance
-#   Shape: VM.Standard.A1.Flex — 4 OCPU, 24 GB memory (Always Free)
-#   Image: Canonical Ubuntu 22.04
-ssh-keygen -t ed25519 -C "teachercircle" -f ~/.ssh/teachercircle
-# upload ~/.ssh/teachercircle.pub as the instance's SSH key
+| Account | Note |
+|---|---|
+| GitHub | Holds the repo; Vercel and Supabase both authenticate via "Sign in with GitHub" |
+| Supabase | Free project = hosted Postgres + Auth (GoTrue) + REST (PostgREST) |
+| Vercel | Free Hobby plan; deploys the Next.js app straight from the GitHub repo |
+| Google Cloud Console | OAuth client creation is free and unmetered — create a **fresh** client for production, never reuse the local-dev one |
 
-# Networking → your VCN → Security Lists → Default Security List:
-#   add ingress rules for 0.0.0.0/0, TCP, ports 80 and 443 (in addition to the
-#   default 22)
-```
+### Step 1 — Supabase project
 
-### Step 2 — DNS
+Supabase dashboard → New project → note the project URL
+(`https://<project-ref>.supabase.co`) and the `sb_publishable_...` API key
+(Settings → API). Keep the database password you set — you'll need it once, to run
+migrations.
 
-```bash
-# duckdns.org → sign in → create subdomain "teachercircle" (or your choice)
-# → point it at the VM's public IP
-dig +short teachercircle.duckdns.org   # confirm it resolves before continuing
-```
+### Step 2 — Apply migrations
 
-### Step 3 — Server bootstrap
-
-```bash
-ssh -i ~/.ssh/teachercircle ubuntu@teachercircle.duckdns.org
-
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER
-newgrp docker
-
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw --force enable
-```
-
-### Step 4 — Google OAuth credentials
-
-```
-console.cloud.google.com → new project → APIs & Services → OAuth consent screen
-  (External, fill app name/support email)
-→ Credentials → Create Credentials → OAuth client ID → Web application
-  Authorized redirect URI: https://teachercircle.duckdns.org/auth/callback
-```
-
-Copy the Client ID and Secret for step 5. Note: a new consent screen starts in
-"Testing" mode with a 100-test-user cap — submit for verification before you
-expect to exceed that.
-
-### Step 5 — Clone, configure, boot
+Run every migration **except `0000_bootstrap.sql`** — that file exists only to patch
+around a plain-Postgres + standalone-GoTrue setup (a hand-rolled `auth.uid()`, `anon`/
+`authenticated` roles); Supabase already provides all of that, better. Running it
+against Supabase would overwrite Supabase's own `auth.uid()` function — confirmed by
+inspecting it before and after on a real project, not assumed.
 
 ```bash
-git clone <your-repo-url> teachercircle
-cd teachercircle
-cp .env.production.example .env
+brew install postgresql@16   # for the psql client only — no local server needed
 
-# generate secrets
-sed -i "s#^DB_PASSWORD=.*#DB_PASSWORD=$(openssl rand -hex 24)#" .env
-sed -i "s#^JWT_SECRET=.*#JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')#" .env
-sed -i "s#^MEILI_MASTER_KEY=.*#MEILI_MASTER_KEY=$(openssl rand -hex 24)#" .env
-sed -i "s#^MINIO_ROOT_PASSWORD=.*#MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)#" .env
-
-nano .env   # fill in APP_HOSTNAME (if different), GOOGLE_CLIENT_ID/SECRET, UPI_PAYEE_VPA
-
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml ps   # wait until postgres shows healthy
-```
-
-### Step 6 — Bootstrap, then migrate
-
-GoTrue's bundled migrations need a few things this Postgres image doesn't
-provision on its own — the `auth` schema, a role literally named `postgres`,
-and a dedicated connection role with `search_path` set to `auth` (GoTrue's
-own migrations and runtime queries use unqualified table/type names) — found
-by actually running this stack, not documented anywhere obvious. It
-crash-loops harmlessly until this runs, then recovers on its own within
-~60s — no restart needed.
-
-```bash
-source .env   # brings DB_PASSWORD into scope for the gotrue_conn script below
-
-for f in db/init/*.sql; do
+for f in db/migrations/0001_*.sql db/migrations/0002_*.sql db/migrations/0003_*.sql \
+         db/migrations/0004_*.sql db/migrations/0005_*.sql db/migrations/0006_*.sql \
+         db/migrations/0007_*.sql db/migrations/0008_*.sql db/migrations/0009_*.sql \
+         db/migrations/0010_*.sql db/migrations/0011_*.sql db/migrations/0012_*.sql \
+         db/migrations/0013_*.sql db/migrations/0014_*.sql; do
   echo "Applying $f"
-  docker compose -f docker-compose.prod.yml exec -T postgres \
-    psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U teachercircle -d postgres \
-    -v db_password="$DB_PASSWORD" < "$f"
+  PGPASSWORD='<your DB password>' psql -v ON_ERROR_STOP=1 \
+    -h db.<project-ref>.supabase.co -p 5432 -U postgres -d postgres -f "$f"
 done
 
-# Wait for gotrue to show "healthy" here (docker compose -f
-# docker-compose.prod.yml ps gotrue) before continuing — it needs to have
-# already created auth.users.
-
-for f in db/migrations/*.sql; do
-  echo "Applying $f"
-  docker compose -f docker-compose.prod.yml exec -T postgres \
-    psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U teachercircle -d postgres < "$f"
-done
-
-# PostgREST caches the schema at startup and won't notice the tables/RPCs
-# the migrations above just created until told to — found running this for
-# real, not a hypothetical edge case.
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  psql -h 127.0.0.1 -U teachercircle -d postgres -c "NOTIFY pgrst, 'reload schema';"
+PGPASSWORD='<your DB password>' psql -h db.<project-ref>.supabase.co -p 5432 \
+  -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
 ```
 
-### Step 7 — Verify
+Verify: `curl -H "apikey: <publishable key>" https://<project-ref>.supabase.co/rest/v1/feature_flags?select=*`
+should return the seeded row, not a 401.
+
+### Step 3 — Google OAuth (fresh client, production only)
+
+```
+console.cloud.google.com → new project → APIs & Services → Credentials
+→ Create Credentials → OAuth client ID → Web application
+  Authorized redirect URI: https://<project-ref>.supabase.co/auth/v1/callback
+```
+
+Then paste the Client ID + Secret into **Supabase Dashboard → Authentication →
+Providers → Google** and toggle it on — that's a Supabase control-plane setting, not
+something any env var here can flip.
+
+### Step 4 — Vercel
+
+Vercel dashboard → Add New → Project → import the GitHub repo. In the project's
+Environment Variables settings, add everything from `.env.production.example`:
+`APP_HOSTNAME` (Vercel gives you this once the first deploy finishes, e.g.
+`teachercircle.vercel.app` — circle back and fill it in after), `POSTGREST_URL`,
+`GOTRUE_URL`, `GOTRUE_URL_BROWSER`, `SUPABASE_API_KEY`, `GOOGLE_OAUTH_ENABLED`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPI_PAYEE_VPA`, `UPI_PAYEE_NAME`. Deploy.
+
+### Step 5 — Verify
 
 ```bash
-curl -I https://teachercircle.duckdns.org        # HTTP/2 200, valid Let's Encrypt cert
-curl https://teachercircle.duckdns.org/auth/health
+curl -I https://<your-app>.vercel.app        # HTTP/2 200, Vercel's own free TLS
 ```
 
-Then in a browser: sign in with Google end to end, complete role onboarding,
-create a teacher profile, search, connect, review.
+Then in a browser: sign in with Google end to end, complete role onboarding, create
+a teacher profile, search, connect, leave feedback.
 
-### Step 8 — First admin (production)
-
-Same one-time DB promotion as local:
+### Step 6 — First admin (production)
 
 ```bash
-docker compose -f docker-compose.prod.yml exec postgres psql -h 127.0.0.1 -U teachercircle -d postgres \
-  -c "update users set role = 'admin' where email = 'you@example.com';"
+PGPASSWORD='<your DB password>' psql -h db.<project-ref>.supabase.co -p 5432 \
+  -U postgres -d postgres -c "update users set role = 'admin' where email = 'you@example.com';"
 ```
 
-### Step 9 — Backups (recommended, still $0)
+### Step 7 — Keeping the free Supabase project awake
 
-```bash
-# crontab -e — nightly dump, kept 7 days locally
-0 2 * * * docker compose -f /home/ubuntu/teachercircle/docker-compose.prod.yml exec -T postgres \
-  pg_dump -U teachercircle teachercircle | gzip > /home/ubuntu/backups/db-$(date +\%F).sql.gz && \
-  find /home/ubuntu/backups -mtime +7 -delete
-```
+Free Supabase projects pause after 7 days with no database activity (first request
+after that takes 10-30s to cold-start — not broken, just slow once). A scheduled
+GitHub Actions workflow hitting the project on a cron is the standard free fix; add
+one once the app is live.
 
-Optionally push these to Cloudflare R2's free 10GB tier for off-VM durability.
+### Step 8 — Turning on billing
 
-### Step 10 — Turning on billing
-
-Everything (UPI QR, submit-reference, admin approval) works right now with
-zero effect on any user. To actually enforce the free-tier limits:
-
-```bash
-docker compose -f docker-compose.prod.yml exec postgres psql -h 127.0.0.1 -U teachercircle -d postgres \
-  -c "update feature_flags set enabled = true where key = 'payments_enabled';"
-```
-
-Roll back the same way with `enabled = false` — instant, and any subscription
-already purchased is untouched.
+Still ships UI-disabled — see `lib/featureToggles.ts` (`SUBSCRIPTION_UI_ENABLED`).
+The underlying flow is unaffected by any of the above and works exactly as it did
+locally once that flag flips.
 
 ### Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Caddy won't issue a TLS cert | Port 80 blocked, or DNS hasn't propagated | Re-check the security list + `ufw`; `dig` the hostname before retrying |
-| Google sign-in errors after redirect | Redirect URI mismatch | Must exactly match `https://<APP_HOSTNAME>/auth/callback` in both Google Console and `.env` |
-| `/connect` always returns 402 with the flag off | Stale app process, not a stale cache (Redis isn't wired to the flag yet — see LLD §7) | `docker compose -f docker-compose.prod.yml restart app` |
-| Oracle reclaims the Always Free instance | Rare, but documented for underused resources in some regions | Keep it lightly active; redeploy is a ~20-minute re-run of steps 1–6 |
+| Every request to Supabase returns 401 | Missing `apikey` header | Confirm `SUPABASE_API_KEY` is set in Vercel — required on every `/rest/v1` and `/auth/v1` call, bearer token or not |
+| Google sign-in errors after redirect | Redirect URI mismatch | Must exactly match `https://<project-ref>.supabase.co/auth/v1/callback` in both Google Console and Supabase's Google provider settings |
+| Email/password signup succeeds but never logs the user in | Supabase's `mailer_autoconfirm` defaults to `false` (unlike local dev) | Expected — the UI now shows "check your email" (see `lib/gotrue.ts`'s `SignUpResult`); confirm the emailed link before signing in |
+| App works, then goes slow/404s after a week of no traffic | Free Supabase project auto-paused | First request wakes it in 10-30s; set up the Step 7 keep-alive to avoid this going forward |
