@@ -134,6 +134,22 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **CRITICAL, pre-existing bug found while verifying report/block live:
+  `is_admin()` recursed into itself infinitely on Supabase's real Postgres**
+  (`select is_admin();` alone crashed with "stack depth limit exceeded" for
+  any user) — it was `language sql stable`, not `security definer`, so its own
+  `select ... from users` was itself subject to `users`'s
+  `users_admin_read using (is_admin())` policy, calling back into itself.
+  Confirmed NOT reproducible on local Postgres 15.8 — genuinely
+  version/planner-dependent, invisible to every tier of testing used in this
+  project until tested directly against the real Supabase database. This bug
+  predates report/block entirely (it's been in `is_admin()` since
+  `0005_profile_lifecycle_admin.sql`) and likely affected other real admin
+  paths too (payment approval, teacher soft-delete/restore) — report/block
+  just happened to be the first feature to call it from a path hit on every
+  message read. Fixed with `security definer`
+  (`db/migrations/0020_fix_is_admin_recursion.sql`), same pattern as
+  `are_users_blocked()`. Full writeup: `docs/04-test-report.md` §3i.
 - **New: report + block (P0 trust & safety), plus a real RLS bug found and
   fixed**: either party in a conversation can now report or block the other
   (`db/migrations/0018_block_report.sql`, `0019_unblock_ui.sql`); blocking is

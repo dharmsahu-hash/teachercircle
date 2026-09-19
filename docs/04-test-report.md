@@ -12,7 +12,73 @@
 | 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **71 / 71 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 172 / 172 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.)
+**Total: 172 / 172 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
+
+## 3i. CRITICAL, pre-existing: `is_admin()` infinite recursion on real Postgres (Supabase), broken since `0005_profile_lifecycle_admin.sql`
+
+Found immediately after deploying §3h to production, while doing the same
+live-browser verification pass as every other feature this session: opening a
+message thread that had just been unblocked returned a 500 instead of the
+message history.
+
+**Root cause, confirmed directly against the database, with no app code
+involved** (`select is_admin();` alone, in a fresh transaction, as an ordinary
+non-admin authenticated user):
+
+```
+ERROR:  stack depth limit exceeded
+CONTEXT:  SQL function "is_admin" during startup
+SQL function "is_admin" statement 1
+SQL function "is_admin" statement 1
+... (repeats until Postgres aborts)
+```
+
+`is_admin()` (`0005_profile_lifecycle_admin.sql`) was `language sql stable` —
+**not** `security definer`. Its own body queries `users` (`select 1 from users
+where id = auth.uid() and role = 'admin' ...`), and `users` has had a
+`users_admin_read using (is_admin())` policy since that same migration. So
+`is_admin()`'s own inner query is itself subject to `users`'s RLS, which
+includes a call back into `is_admin()`. On Supabase's Postgres, the planner
+hoists that reference in a way that runs unconditionally rather than
+short-circuiting on the `auth.uid() = id` branch that should normally make it
+unnecessary — so every call recurses into itself until the stack is
+exhausted. **Confirmed NOT reproducible on local Docker Postgres 15.8** —
+`select is_admin();` returns a clean `f` there. This is a genuine
+Postgres-version/planner-dependent difference between local and Supabase
+Cloud, not something any amount of local testing (Tier 1, 2, or 3 as run
+in this project) could have caught — the function has behaved correctly on
+every environment used for testing since it was written.
+
+**This bug is not new** — it has existed since `0005_profile_lifecycle_admin.sql`
+and affects six other policies (`teacher_admin_read`, `parent_admin_read`,
+`student_admin_read`, `subscription_admin_read`, `txn_admin_read`,
+`audit_admin_read`) plus every admin RPC that calls `is_admin()` internally
+(payment approval, teacher soft-delete/restore, admin-create-teacher). §3h's
+report/block work didn't cause it — it's simply the first feature to call
+`is_admin()` from a path (`message_participant_read`) that gets hit on every
+single message read, which is what made it impossible to miss. Whether any
+of those other six admin paths were silently broken in production before
+today isn't fully known — this project's admin-flow tests up to this point
+ran against the Tier 2 fake backend (which doesn't model Postgres RLS
+planner behavior at all) rather than real Supabase RLS.
+
+**Fix** (`db/migrations/0020_fix_is_admin_recursion.sql`): `security definer`,
+the same pattern already used for `are_users_blocked()`,
+`reveal_teacher_contact()`, `set_my_role()`, etc. — it runs with the defining
+role's privileges, so its inner query bypasses `users`'s RLS entirely instead
+of re-entering it, eliminating the self-reference regardless of the specific
+planner behavior that triggered it.
+
+**Verified for real, against the live database**, immediately: `select
+is_admin();` returns `f` for a non-admin and `t` for a real admin, repeated 3
+times each for consistency (not a one-off), and the message thread that had
+been failing loads its history correctly again. Applied to local Docker
+Postgres too, for parity, though it was never actually broken there.
+
+No new Tier 1/2 checks — this class of bug is specific to real Postgres RLS
+planner behavior and is invisible to the fake backend by construction; the
+manual real-database verification above is the actual regression check, same
+standard as the block-enforcement bug in §3h.
 
 ## 3h. Report + block (P0 trust & safety), plus a real RLS bug found and fixed
 
