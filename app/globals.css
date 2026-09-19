@@ -372,3 +372,6 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 .nav-item-bell .unread-dot { position: absolute; top: 4px; left: 14px; }
 .conversation-unread { border-color: var(--accent); background: var(--accent-soft); }
 .conversation-unread b { color: var(--ink); }
+
+.report-block-row { margin-top: 10px; }
+.report-block-row button { font-size: 13px; padding: 6px 12px; }

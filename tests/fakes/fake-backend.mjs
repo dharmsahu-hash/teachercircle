@@ -48,6 +48,8 @@ export function createFakeBackend() {
     contact_request: [],
     conversation: [],
     message: [],
+    blocked_user: [],
+    message_report: [],
     feature_flags: { payments_enabled: false },
     plan_limits: {
       student: { role: "student", free_connections_per_month: 3, yearly_price_amount: 499, yearly_price_currency: "INR" },
@@ -69,6 +71,8 @@ export function createFakeBackend() {
     db.contact_request.length = 0;
     db.conversation.length = 0;
     db.message.length = 0;
+    db.blocked_user.length = 0;
+    db.message_report.length = 0;
     db.feature_flags.payments_enabled = false;
     db.subscription.clear();
     db.payment_transaction.clear();
@@ -359,10 +363,17 @@ export function createFakeBackend() {
       }
 
       // ---- conversation ----
+      const isMutuallyBlocked = (aId, bId) =>
+        db.blocked_user.some(
+          (bu) => (bu.blocker_id === aId && bu.blocked_id === bId) || (bu.blocker_id === bId && bu.blocked_id === aId)
+        );
+
       if (url.pathname === "/conversation") {
         if (req.method === "GET") {
           let rows = db.conversation.filter((r) => rowMatches(r, filters));
-          rows = rows.filter((r) => requester && (r.teacher_id === requester.id || r.requester_id === requester.id));
+          rows = rows.filter(
+            (r) => requester && (r.teacher_id === requester.id || r.requester_id === requester.id || isAdmin(requester))
+          );
           return json(res, 200, rows.map((r) => project(r, select)));
         }
         if (req.method === "POST") {
@@ -370,6 +381,9 @@ export function createFakeBackend() {
           if (!requester || body.requester_id !== requester.id) return error(res, 403, "row-level security policy violation");
           const connected = db.contact_request.some((c) => c.teacher_id === body.teacher_id && c.requester_id === body.requester_id);
           if (!connected) return error(res, 403, "new row violates row-level security policy for table conversation");
+          if (isMutuallyBlocked(body.teacher_id, body.requester_id)) {
+            return error(res, 403, "new row violates row-level security policy for table conversation");
+          }
           if (db.conversation.some((c) => c.teacher_id === body.teacher_id && c.requester_id === body.requester_id)) {
             return error(res, 409, "duplicate key value violates unique constraint");
           }
@@ -400,6 +414,12 @@ export function createFakeBackend() {
               has_unread: db.message.some(
                 (m) => m.conversation_id === c.id && m.sender_id !== requester.id && !m.read_at
               ),
+              is_blocked: isMutuallyBlocked(c.teacher_id, c.requester_id),
+              blocked_by_me: db.blocked_user.some(
+                (b) =>
+                  b.blocker_id === requester.id &&
+                  b.blocked_id === (iAmTeacher ? c.requester_id : c.teacher_id)
+              ),
             };
           })
           .filter((r) => rowMatches(r, filters));
@@ -411,7 +431,9 @@ export function createFakeBackend() {
       if (url.pathname === "/message") {
         const isParticipant = (conversationId) => {
           const c = db.conversation.find((c) => c.id === conversationId);
-          return Boolean(c && requester && (c.teacher_id === requester.id || c.requester_id === requester.id));
+          return Boolean(
+            c && requester && (c.teacher_id === requester.id || c.requester_id === requester.id || isAdmin(requester))
+          );
         };
         if (req.method === "GET") {
           let rows = db.message.filter((r) => rowMatches(r, filters));
@@ -423,10 +445,71 @@ export function createFakeBackend() {
           const body = await readBody(req);
           if (!requester || body.sender_id !== requester.id) return error(res, 403, "row-level security policy violation");
           if (!isParticipant(body.conversation_id)) return error(res, 403, "new row violates row-level security policy for table message");
+          const c = db.conversation.find((c) => c.id === body.conversation_id);
+          if (c && isMutuallyBlocked(c.teacher_id, c.requester_id)) {
+            return error(res, 403, "new row violates row-level security policy for table message");
+          }
           if (!body.body || !body.body.trim()) return error(res, 400, "new row for relation message violates check constraint");
           const row = { id: crypto.randomUUID(), conversation_id: body.conversation_id, sender_id: body.sender_id, body: body.body, created_at: new Date().toISOString(), read_at: null };
           db.message.push(row);
           return json(res, 201, [row]);
+        }
+      }
+
+      // ---- blocked_user ----
+      if (url.pathname === "/blocked_user") {
+        if (req.method === "GET") {
+          let rows = db.blocked_user.filter((r) => rowMatches(r, filters));
+          rows = rows.filter((r) => requester && r.blocker_id === requester.id);
+          return json(res, 200, rows.map((r) => project(r, select)));
+        }
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          if (!requester || body.blocker_id !== requester.id) return error(res, 403, "row-level security policy violation");
+          if (db.blocked_user.some((r) => r.blocker_id === body.blocker_id && r.blocked_id === body.blocked_id)) {
+            return error(res, 409, "duplicate key value violates unique constraint");
+          }
+          const row = { blocker_id: body.blocker_id, blocked_id: body.blocked_id, created_at: new Date().toISOString() };
+          db.blocked_user.push(row);
+          return json(res, 201, [row]);
+        }
+        if (req.method === "DELETE") {
+          if (!requester) return error(res, 401, "not signed in");
+          const blockerId = filters.blocker_id?.replace(/^eq\./, "");
+          const blockedId = filters.blocked_id?.replace(/^eq\./, "");
+          if (blockerId !== requester.id) return error(res, 403, "row-level security policy violation");
+          const before = db.blocked_user.length;
+          db.blocked_user = db.blocked_user.filter((r) => !(r.blocker_id === blockerId && r.blocked_id === blockedId));
+          return json(res, 200, db.blocked_user.length < before ? [{ blocker_id: blockerId, blocked_id: blockedId }] : []);
+        }
+      }
+
+      // ---- message_report ----
+      if (url.pathname === "/message_report") {
+        if (req.method === "GET") {
+          let rows = db.message_report.filter((r) => rowMatches(r, filters));
+          rows = rows.filter((r) => requester && (r.reporter_id === requester.id || isAdmin(requester)));
+          rows = applyOrder(rows, order);
+          return json(res, 200, rows.map((r) => project(r, select)));
+        }
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          if (!requester || body.reporter_id !== requester.id) return error(res, 403, "row-level security policy violation");
+          const c = db.conversation.find((c) => c.id === body.conversation_id);
+          const isParticipant = c && (c.teacher_id === requester.id || c.requester_id === requester.id);
+          if (!isParticipant) return error(res, 403, "new row violates row-level security policy for table message_report");
+          if (!body.reason || !body.reason.trim()) return error(res, 400, "new row for relation message_report violates check constraint");
+          const row = { id: crypto.randomUUID(), conversation_id: body.conversation_id, reporter_id: body.reporter_id, reason: body.reason, created_at: new Date().toISOString(), resolved_at: null };
+          db.message_report.push(row);
+          return json(res, 201, [row]);
+        }
+        if (req.method === "PATCH") {
+          if (!isAdmin(requester)) return error(res, 403, "row-level security policy violation");
+          const id = filters.id?.replace(/^eq\./, "");
+          const body = await readBody(req);
+          const report = db.message_report.find((r) => r.id === id);
+          if (report) Object.assign(report, body);
+          return json(res, 200, report ? [report] : []);
         }
       }
 

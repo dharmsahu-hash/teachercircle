@@ -9,10 +9,64 @@
 | Tier | What it validates | Result |
 |---|---|---|
 | 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **66 / 66 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **58 / 58 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **71 / 71 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 159 / 159 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, and again after message notifications + unread tracking in §3g — see those sections for why Tier 3 wasn't re-run for either.)
+**Total: 172 / 172 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.)
+
+## 3h. Report + block (P0 trust & safety), plus a real RLS bug found and fixed
+
+Adds the top-priority gap from the 2026-09-20 competitive/security review
+(`docs/06-review-2026-09-20.md`): a way to report and block another user in a
+conversation. Blocking is mutual/symmetric — either party blocking the other
+silences the whole conversation for both
+(`db/migrations/0018_block_report.sql`, `0019_unblock_ui.sql`). New surface:
+`POST /api/blocks`, `DELETE /api/blocks/[userId]`,
+`POST /api/conversations/[id]/report`, and an admin moderation page at
+`/admin/reports` (list unresolved reports with full context, mark resolved).
+
+**Real production bug found and fixed, not caught by Tier 2**: the initial
+block-enforcement policies (`conversation_insert_if_connected`,
+`message_insert_if_participant`) used an inline `exists (select ... from
+blocked_user ...)` subquery to check for a block. Unlike a view (which runs
+with its owner's privileges — why `has_unread`/`is_blocked` on
+`conversation_thread` already worked), a subquery embedded directly in another
+table's RLS policy runs under the *querying* user's own privileges. Since
+`blocked_user`'s own SELECT policy only lets the blocker see their own
+blocklist rows, the check silently returned "not blocked" whenever the
+*blocked* party's own session evaluated it — completely defeating the block for
+that party, who could still send messages after being blocked. Tier 2's
+fake-backend model doesn't simulate this RLS-on-RLS interaction, so all 69
+checks at the time passed anyway; the bug was only caught by manually
+switching `SET ROLE authenticated` + `request.jwt.claims` between both real
+participants against the live database and comparing a literal-UUID version of
+the same boolean (correctly `false`) against the `auth.uid()`-based one
+(incorrectly `true`) for identical data. Fixed by moving the check into
+`are_users_blocked(a, b) security definer`, the same pattern already used for
+`is_admin()`/`reveal_teacher_contact()`. Re-verified with the same SET ROLE
+method: the blocked party's insert now correctly fails with "new row violates
+row-level security policy."
+
+**Second gap found live in the browser, not from any test**: after blocking,
+there was no way to undo it from the UI — only via a raw API call. Fixed with
+a small follow-up (`0019_unblock_ui.sql`) adding a `blocked_by_me` column to
+`conversation_thread` (safe as a view column, unlike the bug above) so an
+"Unblock" button shows only to the person who can actually act on it
+(`blocked_user_own_delete` only allows the blocker to remove their own block
+row) — the blocked party sees the same conversation with no button, since
+clicking one would silently do nothing for them.
+
+**Verified for real, end to end in the browser** on the local Docker stack
+with two fresh accounts (a Report submission → visible on `/admin/reports`
+with correct participant emails and message excerpts → resolved; a Block →
+compose box hidden for both sides, blocker sees "Unblock", blocked party does
+not → Unblock → messaging resumes for both).
+
+13 new Tier 2 checks (Section 13: block enforcement is mutual, report
+visibility is reporter/admin-only, admin resolve, `blocked_by_me` is
+correctly asymmetric, unblock restores messaging). No new Tier 3 checks — the
+manual SET ROLE verification above covers the RLS-relevant surface directly
+against the real database, same standard as §3f/§3g.
 
 ## 3g. Message notifications + unread tracking, plus three real bugs found running this live
 

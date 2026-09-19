@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import MessageThread from "@/components/MessageThread";
+import ReportBlockControls from "@/components/ReportBlockControls";
 
 type Contact = { contact_email: string | null; contact_phone: string | null };
 
@@ -112,6 +113,9 @@ export default function ConnectAndReview({
         <div style={{ marginTop: 16 }}>
           <h3 style={{ margin: "0 0 8px" }}>Message this teacher</h3>
           <MessageThread conversationId={conversationId} currentUserId={userId} />
+          <div style={{ marginTop: 8 }}>
+            <ReportBlockControls conversationId={conversationId} otherUserId={teacherId} otherLabel="this teacher" />
+          </div>
         </div>
       )}
 

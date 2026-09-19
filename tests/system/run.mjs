@@ -56,6 +56,7 @@ function makeClient() {
     get: (p) => req("GET", p),
     post: (p, b) => req("POST", p, b),
     patch: (p, b) => req("PATCH", p, b),
+    del: (p) => req("DELETE", p),
     clearCookie: () => (cookie = null),
   };
 }
@@ -472,6 +473,62 @@ async function runScenarios(backend) {
   {
     const r = await teacherClient.get("/api/conversations");
     check("12.8 Conversation list includes this thread for the teacher", r.status === 200 && r.body.some((c) => c.conversation_id === conversationId), JSON.stringify(r.body));
+  }
+
+  // ---------- 13. Block + report ----------
+  {
+    const r = await studentClient.post("/api/blocks", { userId: meeraId });
+    check("13.1 Student blocks the teacher -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("13.2 Conversation now shows is_blocked=true", r.status === 200 && convo?.is_blocked === true, JSON.stringify(convo));
+    check("13.2b blocked_by_me is true for the blocker (student)", convo?.blocked_by_me === true, JSON.stringify(convo));
+  }
+  {
+    const r = await teacherClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("13.2c blocked_by_me is false for the blocked party (teacher) — asymmetric so only the blocker sees Unblock", convo?.blocked_by_me === false, JSON.stringify(convo));
+  }
+  {
+    const r = await teacherClient.post(`/api/conversations/${conversationId}/messages`, { body: "Are you still there?" });
+    check("13.3 SECURITY: blocked conversation rejects a new message from the teacher", r.status !== 200, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await studentClient.post(`/api/conversations/${conversationId}/messages`, { body: "Hello?" });
+    check("13.4 Blocking is mutual — the blocker can't send either", r.status !== 200, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await studentClient.post(`/api/conversations/${conversationId}/report`, { reason: "Being unresponsive and rude" });
+    check("13.5 Student reports the conversation -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    const r = await teacher2Client.get("/api/conversations");
+    check("13.6 A non-participant, non-admin sees none of this in their own conversation list", r.status === 200 && !r.body.some((c) => c.conversation_id === conversationId), JSON.stringify(r.body));
+  }
+  {
+    const r = await adminClient.get(`/api/admin/reports`);
+    check("13.7 Admin can see the report (RLS allows admin read)", r.status === 200 && r.body.some((rep) => rep.reason === "Being unresponsive and rude"), JSON.stringify(r.body));
+  }
+  {
+    const listRows = await adminClient.get(`/api/admin/reports`);
+    const reportId = listRows.body?.find((rep) => rep.conversation_id === conversationId)?.id;
+    const r = await adminClient.post(`/api/admin/reports/${reportId}/resolve`, {});
+    check("13.8 Admin marks the report resolved -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.del(`/api/blocks/${meeraId}`);
+    check("13.9 Unblocking is a distinct, working action -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("13.10 After unblocking, is_blocked is false again", r.status === 200 && convo?.is_blocked === false, JSON.stringify(convo));
+  }
+  {
+    const r = await studentClient.post(`/api/conversations/${conversationId}/messages`, { body: "Sorry, misclicked earlier!" });
+    check("13.11 Messaging resumes after unblocking", r.status === 200 && r.body?.body, JSON.stringify(r.body));
   }
 }
 

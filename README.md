@@ -134,6 +134,27 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: report + block (P0 trust & safety), plus a real RLS bug found and
+  fixed**: either party in a conversation can now report or block the other
+  (`db/migrations/0018_block_report.sql`, `0019_unblock_ui.sql`); blocking is
+  mutual — either side blocking silences the conversation for both, not just
+  one direction. Admins review unresolved reports at `/admin/reports`. **Real
+  bug**: the first version checked for a block with an inline `exists (select
+  ... from blocked_user ...)` subquery inside the RLS policy — unlike a view,
+  which runs with its owner's privileges, a subquery embedded in another
+  table's policy runs under the *querying* user's own privileges. Since
+  `blocked_user`'s own SELECT policy only lets the blocker see their own rows,
+  the blocked party's own session evaluated the check against zero visible
+  rows and got "not blocked" back — silently defeating the block for exactly
+  the person it was supposed to stop. All 69 Tier 2 checks passed anyway (the
+  fake-backend model doesn't simulate RLS-on-RLS visibility); only caught by
+  switching `SET ROLE`/`request.jwt.claims` between both real participants
+  against the live database. Fixed with `are_users_blocked()
+  security definer`, the same pattern as `is_admin()`. A second, smaller gap
+  turned up live in the browser (not from any test): no UI way to undo a
+  block — fixed by exposing `blocked_by_me` on `conversation_thread` so
+  "Unblock" shows only to whichever side can actually do it. Full writeup:
+  `docs/04-test-report.md` §3h.
 - **New: message notifications + unread tracking, plus three real production bugs
   found running this live**: an email (via Brevo's HTTP API, `lib/email.ts`) now
   goes to the other participant on every new message, and a red dot marks unread

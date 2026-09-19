@@ -8,9 +8,11 @@ type Message = { id: string; sender_id: string; body: string; created_at: string
 export default function MessageThread({
   conversationId,
   currentUserId,
+  readOnly = false,
 }: {
   conversationId: string;
   currentUserId: string;
+  readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [body, setBody] = useState("");
@@ -78,17 +80,19 @@ export default function MessageThread({
           </div>
         ))}
       </div>
-      <form onSubmit={send} style={{ marginTop: 12 }}>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Write a message…"
-        />
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy || !body.trim()}>
-          {busy ? "Sending…" : "Send"}
-        </button>
-      </form>
+      {!readOnly && (
+        <form onSubmit={send} style={{ marginTop: 12 }}>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Write a message…"
+          />
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={busy || !body.trim()}>
+            {busy ? "Sending…" : "Send"}
+          </button>
+        </form>
+      )}
     </div>
   );
 }

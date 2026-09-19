@@ -28,6 +28,7 @@ export default async function AdminUsersPage({
         <Link href="/admin/users?role=parent" className="btn secondary">Parents</Link>
         <Link href="/admin/users?role=student" className="btn secondary">Students</Link>
         <Link href="/admin/payments" className="btn secondary">Pending payments</Link>
+        <Link href="/admin/reports" className="btn secondary">Message reports</Link>
         <Link href="/admin/teachers/new" className="btn">+ Add teacher</Link>
       </div>
       <table style={{ marginTop: 16 }}>
