@@ -4,7 +4,12 @@ export default function LoginPage() {
   const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID);
   const gotrueUrlBrowser = process.env.GOTRUE_URL_BROWSER || "http://localhost:9999";
   const appHostname = process.env.APP_HOSTNAME || "localhost:3000";
-  const redirectTo = encodeURIComponent(`http://${appHostname}/auth/callback`);
+  // Hardcoded http:// here silently built a wrong https-required redirect_to
+  // on Vercel — found only by re-reading this before going live, not from a
+  // test (nothing exercises this string against a real Google/Supabase
+  // round-trip). localhost is the only case that's genuinely plain HTTP.
+  const scheme = appHostname.startsWith("localhost") ? "http" : "https";
+  const redirectTo = encodeURIComponent(`${scheme}://${appHostname}/auth/callback`);
   const googleHref = `${gotrueUrlBrowser}/authorize?provider=google&redirect_to=${redirectTo}`;
 
   return (
