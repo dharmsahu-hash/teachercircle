@@ -1,0 +1,16 @@
+-- Runs automatically via Postgres's docker-entrypoint-initdb.d mechanism on
+-- the VERY FIRST boot of a fresh data volume — before GoTrue ever connects.
+--
+-- Real bug found running Tier 3 for the first time: GoTrue v2.164.0's own
+-- bundled migration does `CREATE TABLE IF NOT EXISTS auth.users (...)` but
+-- never creates the `auth` schema itself — it assumes something already
+-- provisioned it. That assumption is true for the full Supabase Postgres
+-- image (which ships init scripts of its own) and false for the plain
+-- `postgres:16-alpine` image this project uses, so GoTrue crash-loops with
+-- "ERROR: schema \"auth\" does not exist" on first boot without this file.
+--
+-- db/migrations/0000_bootstrap.sql's own `create schema if not exists auth`
+-- runs too late to help — it's applied manually, after `docker compose up`,
+-- by which point GoTrue has already tried and failed. This file is what
+-- actually has to run first.
+CREATE SCHEMA IF NOT EXISTS auth;

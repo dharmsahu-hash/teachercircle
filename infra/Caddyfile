@@ -1,0 +1,22 @@
+{$APP_HOSTNAME} {
+  # GoTrue must be reachable from the public internet for exactly one reason:
+  # the browser navigates straight to it for the Google OAuth redirect (see
+  # app/login/page.tsx's googleHref). Email/password auth never needs this —
+  # that path is a server-to-server call from our own API routes.
+  #
+  # handle_path strips the "/auth" prefix before proxying, so a request to
+  # https://<domain>/auth/callback arrives at GoTrue as /callback — which is
+  # the exact path registered in docker-compose.prod.yml's
+  # GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI and in Google Cloud Console.
+  handle_path /auth/* {
+    reverse_proxy gotrue:9999
+  }
+
+  # Everything else, including all /api/* routes, goes to Next.js. PostgREST
+  # and Meilisearch are deliberately NOT routed here — the app is their only
+  # caller, over the internal Docker network, so they have no public route at
+  # all in production. Smaller attack surface than the original design doc
+  # assumed (which exposed /rest/* too, for a direct-client-to-PostgREST
+  # pattern this codebase doesn't actually use).
+  reverse_proxy app:3000
+}

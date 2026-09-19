@@ -1,0 +1,161 @@
+# Production variant of docker-compose.yml — the difference is trust boundary,
+# not architecture: every backing service loses its public port mapping, and
+# Caddy becomes the single public entry point with free auto-renewing TLS.
+#
+# Deploy with:  docker compose -f docker-compose.prod.yml up -d --build
+# (this file is intentionally standalone rather than a docker-compose.yml
+# override — Compose merges list-type keys like `ports` by appending rather
+# than replacing, which makes "remove a port mapping in prod" fragile to
+# express as an override; a second explicit file is more reliable to read
+# and run correctly a year from now.)
+
+name: teachercircle
+
+services:
+  postgres:
+    # See docker-compose.yml for the full story, confirmed by actually
+    # running this stack: GoTrue's bundled migrations need the `auth` schema
+    # and a role literally named `postgres`, which none of postgres:16-alpine
+    # or supabase/postgres (tried both a 2023 and a 2025 build) provision on
+    # their own — fixed by db/init/*.sql, applied manually via
+    # `./db/bootstrap.sh` (does not run automatically — see `volumes` below).
+    # GoTrue also needs its own connection role with search_path=auth (see
+    # GOTRUE_DB_DATABASE_URL below) — several of its migrations and all of
+    # its runtime queries use unqualified table/type names.
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    environment:
+      # This image ignores a custom POSTGRES_DB and always provisions
+      # "postgres" — every connection string below targets /postgres.
+      POSTGRES_DB: postgres
+      POSTGRES_USER: teachercircle
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Mounted per convention but confirmed NOT to auto-run on this image —
+      # see docker-compose.yml. Kept as a harmless no-op; db/bootstrap.sh is
+      # the real mechanism.
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teachercircle"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gotrue:
+    image: supabase/gotrue:v2.164.0
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_DB_DRIVER: postgres
+      # gotrue_conn, not teachercircle — see db/init/02-gotrue-connection-role.sql.
+      GOTRUE_DB_DATABASE_URL: postgres://gotrue_conn:${DB_PASSWORD}@postgres:5432/postgres
+      # Required or GoTrue refuses to boot — found via local Tier-3 testing,
+      # see docker-compose.yml. Deliberately NOT prefixed GOTRUE_ (confirmed
+      # against the real image — that prefixed form is silently ignored). In
+      # prod this is reachable through Caddy's /auth/* proxy (handle_path
+      # strips the prefix), so the externally visible base URL for GoTrue is
+      # the same origin plus /auth.
+      API_EXTERNAL_URL: https://${APP_HOSTNAME}/auth
+      GOTRUE_SITE_URL: https://${APP_HOSTNAME}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_DISABLE_SIGNUP: "false"
+      # SECURITY TRADE-OFF, decide before real users sign up: true means a
+      # signup activates immediately with no proof the email is real. Flip to
+      # "false" once GOTRUE_SMTP_* is configured — see docs/03-deployment.md.
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${GOOGLE_OAUTH_ENABLED:-false}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET}
+      # Through Caddy's `handle_path /auth/*` (strips the prefix), this is
+      # reachable at https://${APP_HOSTNAME}/auth/callback — register that
+      # exact URL in Google Cloud Console, not this raw internal one.
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: https://${APP_HOSTNAME}/auth/callback
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.0
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://teachercircle:${DB_PASSWORD}@postgres:5432/postgres
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+    # No `ports:` — only `app` and `caddy` reach this, over the internal
+    # Docker network. Nothing on the public internet can query it directly.
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilidata:/meili_data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  minio:
+    # See docker-compose.yml — minio/minio on Docker Hub now requires
+    # `docker login`; quay.io's mirror has the identical tag, no auth needed.
+    image: quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgrest
+      - gotrue
+      - meilisearch
+      - redis
+    env_file: .env
+    environment:
+      POSTGREST_URL: http://postgrest:3000
+      GOTRUE_URL: http://gotrue:9999
+      # Same-origin through Caddy, so the browser's Google-sign-in link
+      # doesn't need a separate port or hostname.
+      GOTRUE_URL_BROWSER: https://${APP_HOSTNAME}/auth
+      MEILISEARCH_URL: http://meilisearch:7700
+      REDIS_URL: redis://redis:6379
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile
+      - caddydata:/data
+    depends_on:
+      - app
+      - gotrue
+
+volumes:
+  pgdata:
+  meilidata:
+  miniodata:
+  caddydata:
