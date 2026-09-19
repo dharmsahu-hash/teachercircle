@@ -1,11 +1,6 @@
-import { buildUpiDonationLink, buildUpiQrDataUrl } from "@/lib/upi";
-
 export const metadata = { title: "About — TeacherCircle" };
 
-export default async function AboutPage() {
-  const donationQr = await buildUpiQrDataUrl(buildUpiDonationLink("Support TeacherCircle"));
-  const upiVpa = process.env.UPI_PAYEE_VPA || "yourname@upi";
-
+export default function AboutPage() {
   return (
     <div>
       <h1>About TeacherCircle</h1>
@@ -55,18 +50,19 @@ export default async function AboutPage() {
             Scan the QR code with any UPI app (GPay, PhonePe, Paytm, BHIM) to send
             whatever you&apos;d like.
           </p>
-          <p className="hint" style={{ marginBottom: 12 }}>
+          <p className="hint" style={{ marginBottom: 0 }}>
             Every rupee goes straight back into building and maintaining free tools for
             the TeacherCircle community.
           </p>
-          <span className="pill">{upiVpa}</span>
         </div>
         <div className="donation-qr">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={donationQr} alt="UPI QR code to donate" width={180} height={180} />
-          <p className="hint" style={{ margin: "6px 0 0", textAlign: "center" }}>
-            Scan to pay via UPI
-          </p>
+          <img
+            src="/donate-qr.png"
+            alt="Scan with any UPI app to donate to Dharmendra Kumar Sahu"
+            width={200}
+            height={237}
+          />
         </div>
       </div>
     </div>
