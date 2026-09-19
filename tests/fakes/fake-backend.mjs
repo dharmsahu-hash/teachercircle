@@ -60,6 +60,7 @@ export function createFakeBackend() {
     payment_transaction: new Map(), // id -> row
     admin_audit_log: [],
     gotruePasswords: new Map(), // email -> password (fake auth store)
+    rate_limit_hit: new Map(), // key -> {windowStart, count}, mirrors 0021_rate_limiting.sql
   };
 
   function reset() {
@@ -78,6 +79,7 @@ export function createFakeBackend() {
     db.payment_transaction.clear();
     db.admin_audit_log.length = 0;
     db.gotruePasswords.clear();
+    db.rate_limit_hit.clear();
   }
 
   function requesterFrom(req) {
@@ -717,6 +719,19 @@ export function createFakeBackend() {
           if (tp) Object.assign(tp, args.patch);
           db.admin_audit_log.push({ id: crypto.randomUUID(), actor_id: requester.id, target_table: "teacher_profile", target_id: target, action: "update", created_at: new Date().toISOString() });
           return json(res, 200, undefined);
+        }
+
+        if (fn === "check_rate_limit") {
+          const { p_key, p_max, p_window_seconds } = args;
+          const hit = db.rate_limit_hit.get(p_key);
+          const now = Date.now();
+          if (!hit || now - hit.windowStart > p_window_seconds * 1000) {
+            db.rate_limit_hit.set(p_key, { windowStart: now, count: 1 });
+            return json(res, 200, true);
+          }
+          if (hit.count >= p_max) return json(res, 200, false);
+          hit.count += 1;
+          return json(res, 200, true);
         }
 
         return error(res, 404, `unknown rpc ${fn}`);

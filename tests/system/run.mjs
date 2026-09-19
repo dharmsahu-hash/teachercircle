@@ -23,10 +23,18 @@ function check(name, pass, detail) {
   console.log(`[${mark}] ${name}${detail ? " — " + detail : ""}`);
 }
 
-function makeClient() {
+// Auto-incrementing fake IP per client so the new rate limiter (keyed by
+// x-forwarded-for, see lib/rateLimit.ts) doesn't treat every test "user" as
+// one shared caller the way a real deployment never would — each makeClient()
+// call represents a distinct real user in production, so it gets a distinct
+// IP here too, unless a test deliberately passes one to exercise the limiter.
+let nextFakeIp = 1;
+
+function makeClient(ip) {
+  const clientIp = ip ?? `10.0.0.${nextFakeIp++}`;
   let cookie = null;
   async function req(method, path, body) {
-    const headers = { "Content-Type": "application/json" };
+    const headers = { "Content-Type": "application/json", "x-forwarded-for": clientIp };
     if (cookie) headers["Cookie"] = cookie;
     const res = await fetch(BASE + path, {
       method,
@@ -529,6 +537,41 @@ async function runScenarios(backend) {
   {
     const r = await studentClient.post(`/api/conversations/${conversationId}/messages`, { body: "Sorry, misclicked earlier!" });
     check("13.11 Messaging resumes after unblocking", r.status === 200 && r.body?.body, JSON.stringify(r.body));
+  }
+
+  // ---------- 14. Rate limiting (P1) ----------
+  {
+    // login is capped at 10 attempts / 5 min per IP (app/api/auth/login) —
+    // deliberately share one IP across all 11 attempts here, unlike every
+    // other client in this suite, to actually trip it.
+    const rlIp = "203.0.113.50";
+    let last;
+    for (let i = 0; i < 11; i++) {
+      const c = makeClient(rlIp);
+      last = await c.post("/api/auth/login", { email: "nobody@test.local", password: "wrong" });
+      if (i < 10) {
+        if (last.status === 429) break; // fail fast with a clear signal below
+      }
+    }
+    check("14.1 Login attempt #11 from the same IP within 5 min -> 429", last.status === 429, `got ${last.status}: ${JSON.stringify(last.body)}`);
+  }
+  {
+    const rlIp = "203.0.113.51";
+    let last;
+    for (let i = 0; i < 6; i++) {
+      const c = makeClient(rlIp);
+      last = await c.post("/api/auth/signup", { email: `rl-signup-${i}@test.local`, password: "pw123456" });
+    }
+    check("14.2 Signup attempt #6 from the same IP within an hour -> 429", last.status === 429, `got ${last.status}: ${JSON.stringify(last.body)}`);
+  }
+  {
+    // Positive-path regression: normal single-request use of the other
+    // rate-limited endpoints (message/review/report) must NOT be affected —
+    // each of these already ran exactly once earlier in this suite (each
+    // client has its own distinct fake IP), so a fresh call here is well
+    // under every limit and must still succeed.
+    const r = await teacherClient.post(`/api/conversations/${conversationId}/messages`, { body: "One more, still well under the limit." });
+    check("14.3 A single additional message is not rate-limited", r.status === 200, `got ${r.status}: ${JSON.stringify(r.body)}`);
   }
 }
 

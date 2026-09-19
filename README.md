@@ -134,6 +134,20 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: P1 — basic rate limiting + SEO basics**: a Postgres-backed
+  fixed-window rate limiter (`db/migrations/0021_rate_limiting.sql`,
+  `lib/rateLimit.ts`) — no Redis in this deployment — on login (10/5min/IP),
+  signup (5/hour/IP), messages (30/10min/user), reviews (10/hour/user), and
+  reports (5/hour/user). Plus `app/sitemap.ts`, `app/robots.ts`, and real
+  per-page metadata + schema.org JSON-LD on teacher profile pages. **Real bug
+  found applying the migration**: PostgREST caches its schema at startup and
+  never notices a brand-new RPC function until told to reload — the exact
+  same class of issue already documented below (infra findings, item 8), hit
+  again here because this migration was applied by hand while iterating,
+  outside `db/run-migrations.sh` which already sends the reload notification.
+  `rate_limit_hit` stayed empty and nothing was ever actually limited until
+  running `NOTIFY pgrst, 'reload schema';` directly. See
+  `docs/04-test-report.md` §3j.
 - **CRITICAL, pre-existing bug found while verifying report/block live:
   `is_admin()` recursed into itself infinitely on Supabase's real Postgres**
   (`select is_admin();` alone crashed with "stack depth limit exceeded" for

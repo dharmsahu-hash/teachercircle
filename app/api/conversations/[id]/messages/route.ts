@@ -4,6 +4,7 @@ import { pg, pgRpc, PostgrestError } from "@/lib/db";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import { sendEmail } from "@/lib/email";
 import { getAppBaseUrl } from "@/lib/url";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireSession().catch(() => null);
@@ -37,6 +38,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!trimmed) return NextResponse.json({ error: "Message can't be empty" }, { status: 400 });
   if (containsAbusiveLanguage(trimmed)) {
     return NextResponse.json({ error: ABUSIVE_LANGUAGE_ERROR }, { status: 400 });
+  }
+
+  // 30 messages / 10 min per sender — well above any real conversation's
+  // pace, enough to stop a compromised/scripted account from spamming.
+  const allowed = await checkRateLimit(`message:${user.id}`, 30, 600).catch(() => true);
+  if (!allowed) {
+    return NextResponse.json({ error: "You're sending messages too fast — please slow down." }, { status: 429 });
   }
 
   try {

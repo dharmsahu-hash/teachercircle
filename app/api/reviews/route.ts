@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg } from "@/lib/db";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
@@ -13,6 +14,14 @@ export async function POST(req: NextRequest) {
   }
   if (comment && containsAbusiveLanguage(comment)) {
     return NextResponse.json({ error: ABUSIVE_LANGUAGE_ERROR }, { status: 400 });
+  }
+
+  // 10 / hour per user — the one-review-per-teacher constraint already
+  // limits repeat reviews of the same teacher; this bounds how many
+  // different teachers one account can review in a burst.
+  const allowed = await checkRateLimit(`review:${user.id}`, 10, 3600).catch(() => true);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many reviews submitted — please try again later." }, { status: 429 });
   }
 
   try {

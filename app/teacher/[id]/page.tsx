@@ -1,11 +1,56 @@
 import { pg } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
+import { getAppBaseUrl } from "@/lib/url";
 import Avatar from "@/components/Avatar";
 import ConnectAndReview from "./ConnectAndReview";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
 
 type Review = { rating: number; comment: string | null; created_at: string };
+type TeacherRow = {
+  user_id: string;
+  name: string;
+  bio: string | null;
+  subjects: string[];
+  city: string | null;
+  rate_per_hour: number | null;
+  experience_years: number | null;
+  avg_rating: number;
+  review_count: number;
+  is_subscribed: boolean;
+  avatar_url: string | null;
+  avatar_seed: string | null;
+};
+
+async function getTeacher(id: string): Promise<TeacherRow | null> {
+  const rows = await pg(
+    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed`
+  );
+  return Array.isArray(rows) ? rows[0] ?? null : null;
+}
+
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+  const teacher = await getTeacher(params.id);
+  if (!teacher) return { title: "Teacher not found" };
+
+  const subjectList = teacher.subjects?.join(", ") || "tuition";
+  const title = `${teacher.name} — ${subjectList}${teacher.city ? ` in ${teacher.city}` : ""}`;
+  const description =
+    teacher.bio?.slice(0, 155) ||
+    `${teacher.name} teaches ${subjectList}${teacher.city ? ` in ${teacher.city}` : ""} on TeacherCircle. ${
+      teacher.review_count > 0 ? `Rated ${teacher.avg_rating} from ${teacher.review_count} reviews.` : "Connect directly to get started."
+    }`;
+  const url = `${getAppBaseUrl()}/teacher/${teacher.user_id}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { title, description, url, type: "profile" },
+    twitter: { card: "summary", title, description },
+  };
+}
 
 function timeAgo(iso: string): string {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -18,13 +63,31 @@ function timeAgo(iso: string): string {
 }
 
 export default async function TeacherPublicPage({ params }: { params: { id: string } }) {
-  const rows = await pg(
-    `/teacher_public?user_id=eq.${params.id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed`
-  );
-  const teacher = Array.isArray(rows) ? rows[0] : null;
+  const teacher = await getTeacher(params.id);
 
   if (!teacher) {
     return <p>This profile isn&apos;t listed (it may have been paused or removed).</p>;
+  }
+
+  // Structured data for search engines (schema.org Person + optional
+  // AggregateRating) — helps a listing show up as a rich result rather than
+  // a bare blue link. No PII beyond what's already public on this page.
+  const jsonLd: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    name: teacher.name,
+    description: teacher.bio ?? undefined,
+    knowsAbout: teacher.subjects,
+    address: teacher.city ? { "@type": "PostalAddress", addressLocality: teacher.city } : undefined,
+    image: teacher.avatar_url ?? undefined,
+    url: `${getAppBaseUrl()}/teacher/${teacher.user_id}`,
+  };
+  if (teacher.review_count > 0) {
+    jsonLd.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: teacher.avg_rating,
+      reviewCount: teacher.review_count,
+    };
   }
 
   const reviews: Review[] =
@@ -34,6 +97,11 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
 
   return (
     <div>
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="card row" style={{ alignItems: "flex-start", gap: 16 }}>
         <Avatar avatarUrl={teacher.avatar_url} avatarSeed={teacher.avatar_seed} label={teacher.name} size="lg" />
         <div>

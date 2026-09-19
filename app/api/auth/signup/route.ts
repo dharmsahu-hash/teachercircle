@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signUpWithPassword } from "@/lib/gotrue";
 import { setSessionCookie } from "@/lib/session";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
   const { email, password } = await req.json();
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
   }
+
+  // 5 signups / hour per IP — GoTrue's own mailer cap (2/hour) already limits
+  // real abuse via email volume, this just stops hammering the endpoint itself.
+  const allowed = await checkRateLimit(`signup:${getClientIp(req)}`, 5, 3600).catch(() => true);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many signup attempts — please try again later." }, { status: 429 });
+  }
+
   try {
     const result = await signUpWithPassword(email, password);
     if ("confirmationRequired" in result) {

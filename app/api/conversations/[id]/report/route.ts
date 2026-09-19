@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, PostgrestError } from "@/lib/db";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireSession().catch(() => null);
@@ -9,6 +10,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { reason } = await req.json().catch(() => ({}));
   const trimmed = typeof reason === "string" ? reason.trim() : "";
   if (!trimmed) return NextResponse.json({ error: "Please describe the issue" }, { status: 400 });
+
+  // 5 / hour per user — reports are rare in normal use; this just stops
+  // someone from flooding the admin queue.
+  const allowed = await checkRateLimit(`report:${user.id}`, 5, 3600).catch(() => true);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many reports submitted — please try again later." }, { status: 429 });
+  }
 
   try {
     await pg(`/message_report`, {

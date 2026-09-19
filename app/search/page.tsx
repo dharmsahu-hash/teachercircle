@@ -2,8 +2,15 @@ import Link from "next/link";
 import { pg } from "@/lib/db";
 import Avatar from "@/components/Avatar";
 import { SearchIcon, LocationIcon } from "@/components/icons";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Find a teacher",
+  description:
+    "Search teachers by subject and city across India. Read real feedback from students and parents, and connect directly — free for teachers, no agency in between.",
+};
 
 const POPULAR_SUBJECTS = ["Maths", "Physics", "Chemistry", "Biology", "English", "Computer Science"];
 

@@ -8,11 +8,78 @@
 
 | Tier | What it validates | Result |
 |---|---|---|
-| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **66 / 66 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **71 / 71 passed** |
+| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **70 / 70 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **74 / 74 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 172 / 172 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
+**Total: 179 / 179 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
+
+## 3j. P1: basic rate limiting + SEO basics
+
+From the 2026-09-20 competitive/security review: no rate limiting existed
+anywhere, and no SEO surface (sitemap, robots, per-page metadata, structured
+data) existed either.
+
+**Rate limiting** (`db/migrations/0021_rate_limiting.sql`, `lib/rateLimit.ts`):
+a Postgres-backed fixed-window counter — no Redis/Upstash in this deployment
+(Vercel Hobby + Supabase free tier, $0, no card), and adding one is out of
+scope for "basic." One row per (endpoint, actor) pair in `rate_limit_hit`,
+reset each window; `check_rate_limit(key, max, window_seconds)` is
+`security definer` so it works for both `anon` (login/signup, keyed by IP)
+and `authenticated` (messages/reviews/reports, keyed by user id) callers.
+Applied to: login (10/5min/IP), signup (5/hour/IP), send message
+(30/10min/user), submit review (10/hour/user), submit report (5/hour/user).
+Known, deliberate simplification, documented in the migration: the
+brand-new-key branch has a small race window under true concurrency — fine
+for blunting casual abuse, not a hardened limiter.
+
+**Real bug found applying this migration, not from any test**: after
+applying `0021` locally, the app silently never rate-limited anything —
+`rate_limit_hit` stayed empty no matter how many requests were sent. Traced
+to PostgREST's schema cache: it reads the database schema once at startup
+and never notices new functions created afterward (the same class of issue
+already documented in this project — see the infrastructure findings table,
+item 8 — `db/run-migrations.sh` already sends `NOTIFY pgrst, 'reload
+schema'` after applying migrations, but this migration was applied by hand
+outside that script while iterating, so the notification never went out).
+Confirmed via a direct RPC call from inside the app container:
+`/rpc/check_rate_limit` returned `404 PGRST202 — Could not find the
+function`, not a real error the app's own `.catch(() => true)` fail-open
+should silently mask forever — running `NOTIFY pgrst, 'reload schema';`
+fixed it immediately, confirmed with `select is_admin()`-style repeated
+verification (11 rapid login attempts from one IP: 10 pass, 11th returns
+429). Reinforces: any migration adding a new function called via `pgRpc()`
+needs this notification, whether applied through the script or by hand.
+
+**SEO** (`app/sitemap.ts`, `app/robots.ts`, `generateMetadata` on
+`app/teacher/[id]/page.tsx` and `app/search/page.tsx`, root `app/layout.tsx`
+metadata): sitemap lists every listed teacher plus static routes; robots
+disallows account/admin/messages/API paths and points at the sitemap;
+per-teacher pages get a real `<title>`/description built from their actual
+subjects/city/bio, a canonical URL, Open Graph/Twitter tags, and schema.org
+`Person` + `AggregateRating` JSON-LD (only when they have real reviews — no
+fabricated rating data). Deliberately did NOT claim "verified" anywhere in
+new copy (search page description) — that word is reserved for P2's actual
+verification badge, not written yet.
+
+**Verified for real**: local Docker — `/sitemap.xml` lists real listed
+teachers from the actual database, `/robots.txt` renders correctly, a real
+teacher page's `<title>`, meta description, canonical link, OG tags, and
+JSON-LD were all inspected directly in the rendered DOM and match the
+teacher's real data; rate limiting confirmed via 11 rapid login attempts in
+the browser (10× 401, 1× 429). Production — same rate-limiting sequence
+repeated live in the browser and via curl, `/api/blocks` returning 405 (not
+404) used as an unrelated sanity check that the underlying deploy was live
+before testing.
+
+74 new/changed Tier 2 checks (Section 14: login/signup trip the limit on the
+11th/6th attempt from a shared fake IP, a single message send is unaffected)
+plus 4 new unit tests for `checkRateLimit`/`getClientIp`. Tier 2's fake
+backend also required each test client to get its own distinct fake IP
+(`x-forwarded-for`) — previously all shared no IP at all, which would have
+made the 11 pre-existing signup calls in the suite collide with the new
+5/hour/IP limit and break unrelated tests; giving each simulated user their
+own IP is also just more realistic.
 
 ## 3i. CRITICAL, pre-existing: `is_admin()` infinite recursion on real Postgres (Supabase), broken since `0005_profile_lifecycle_admin.sql`
 
