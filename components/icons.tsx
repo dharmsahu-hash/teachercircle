@@ -35,6 +35,17 @@ export function ShieldIcon({ size = 16 }: IconProps) {
   );
 }
 
+export function MessageIcon({ size = 16 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-4.5 4v-4H5.5A2.5 2.5 0 0 1 3 13.5v-8Z"
+        stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function InfoIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

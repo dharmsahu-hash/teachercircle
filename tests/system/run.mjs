@@ -409,6 +409,48 @@ async function runScenarios(backend) {
     const r = await teacher4Client.get("/api/teacher/profile");
     check("11.3 SECURITY-adjacent: session cookie was cleared client-side by delete", r.status === 401, `got ${r.status} (see report note on JWT non-revocation)`);
   }
+
+  // ---------- 12. In-app messaging (additive to the contact-info reveal) ----------
+  let conversationId;
+  {
+    // studentClient connected to meeraId back in section 6 — messaging
+    // reuses that same "already connected" fact, same rule reviews use.
+    const r = await studentClient.post("/api/conversations", { teacherId: meeraId });
+    check("12.1 Start a conversation with an already-connected teacher -> 200", r.status === 200 && r.body?.conversationId, JSON.stringify(r.body));
+    conversationId = r.body?.conversationId;
+  }
+  {
+    const r = await studentClient.post("/api/conversations", { teacherId: teacher2Id });
+    check("12.2 Starting a conversation WITHOUT connecting first -> rejected", r.status !== 200, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await studentClient.post(`/api/conversations/${conversationId}/messages`, { body: "Hi, is Tuesday evening free?" });
+    check("12.3 Send a message in a conversation you're part of -> 200", r.status === 200 && r.body?.body === "Hi, is Tuesday evening free?", JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.post(`/api/conversations/${conversationId}/messages`, { body: "you are a bastard" });
+    check("12.4 Abusive message body -> rejected", r.status === 400, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await teacherClient.get(`/api/conversations/${conversationId}/messages`);
+    check("12.5 The other participant (teacher) can read the thread", r.status === 200 && r.body.some((m) => m.body === "Hi, is Tuesday evening free?"), JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.post(`/api/conversations/${conversationId}/messages`, { body: "Yes, 6pm works!" });
+    check("12.6 The teacher can reply in the same conversation", r.status === 200 && r.body?.sender_id, JSON.stringify(r.body));
+  }
+  {
+    const r = await teacher2Client.get(`/api/conversations/${conversationId}/messages`);
+    check(
+      "12.7 SECURITY: a non-participant cannot read someone else's conversation",
+      r.status === 200 && r.body.length === 0,
+      `got ${r.status}, ${r.body?.length ?? "?"} messages (RLS filters rows silently, same pattern as F-1/F-2 elsewhere in this suite)`
+    );
+  }
+  {
+    const r = await teacherClient.get("/api/conversations");
+    check("12.8 Conversation list includes this thread for the teacher", r.status === 200 && r.body.some((c) => c.conversation_id === conversationId), JSON.stringify(r.body));
+  }
 }
 
 main();

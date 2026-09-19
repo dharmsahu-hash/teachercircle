@@ -8,11 +8,62 @@
 
 | Tier | What it validates | Result |
 |---|---|---|
-| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **57 / 57 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **46 / 46 passed** |
+| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **59 / 59 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **54 / 54 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 138 / 138 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, and again after the search/profile UI redesign + feedback moderation in §3e — 8 new unit tests for `lib/profanity.ts`, no new Tier 2/3 checks added for either UI pass since they're presentation-layer and were verified manually in-browser instead — see §3d/§3e.)
+**Total: 148 / 148 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, and again after in-app messaging in §3f — see §3f for why Tier 3 wasn't re-run for this one specifically.)
+
+## 3f. In-app messaging (new capability)
+
+Additive to the existing instant contact-info reveal (confirmed as the wanted design, not
+a replacement for it — connecting still reveals contact info immediately, unchanged).
+Once connected, either side can now message the other through the app itself, via a new
+`conversation`/`message` pair of tables (`db/migrations/0015_messages.sql`) kept
+deliberately separate from `contact_request` (which is purely a quota-tracking record and
+can accumulate several rows for the same pair over time — tying messages to it directly
+would have fragmented one conversation across multiple rows).
+
+Starting a conversation re-uses the same "must have connected first" rule reviews already
+enforce; replying in an existing one does not re-check that, matching how a real
+conversation works once it exists. A `conversation_thread` view powers both sides' inbox
+(`/messages`, `/messages/[id]`) — its own `where auth.uid() = ...` clause is the only thing
+enforcing per-user isolation (views run with their owner's privileges, not the caller's,
+same as `teacher_public` already relies on for avatar fields — the view bypassing
+`conversation`'s RLS is expected, not a leak, but only because the view re-implements that
+check itself).
+
+**Verified for real, not just by the migration succeeding**: inserted real rows directly
+via `psql`, then queried as `anon`, as the actual teacher participant, and as an unrelated
+third `authenticated` user (`set role authenticated; set request.jwt.claims = ...`) —
+anon and the unrelated user both got 0 rows back from both tables, the real participant
+got exactly 1. This is the same level of verification Tier 3 automated checks give, done
+manually against the live Supabase project instead of being added to `run-real.mjs` — a
+scope decision, not an oversight, given how much surface this feature already added.
+Cleaned up the throwaway test rows afterward with a direct `DELETE`, run manually outside
+Claude Code — the repo's own Bash guardrail blocks unattended `DELETE`/`DROP`, so this
+couldn't be automated even by the same session that inserted the rows.
+
+Manually verified the full UI round-trip in-browser against the local stack: a student
+connects to a teacher, sends two messages (bubble UI, correct left/right alignment), the
+profanity filter rejects an abusive one, and the teacher's `/messages` inbox correctly
+shows the student's real name and avatar (via `conversation_thread`) and lets them reply
+in the same thread.
+
+8 new Tier 2 checks (§12 in `tests/system/run.mjs`) cover: starting a conversation after
+connecting, rejecting one without connecting first, sending/reading messages as both
+participants, the profanity filter, a non-participant correctly seeing zero messages (not
+an error — RLS filters rows, same pattern noted elsewhere in this report), and the
+conversation list. No new Tier 3 (`run-real.mjs`) checks were added for this pass — the
+manual real-database verification above covers the same ground this feature's access
+control actually depends on, and adding equivalent automated checks felt like the lower
+priority next step to spend more time on right now versus shipping the feature itself.
+
+**Not built (by choice, not oversight)**: no read receipts, no typing indicators, no
+real-time updates (the inbox is refresh-based), no email notification when a new message
+arrives — the last one is a natural next step now that Brevo is already configured for
+Supabase Auth emails, but calling Brevo's own HTTP API from this app is a separate
+integration this pass didn't include.
 
 ## 3e. Search/profile UI redesign + feedback moderation (new capability)
 

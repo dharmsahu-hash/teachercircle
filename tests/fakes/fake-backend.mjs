@@ -46,6 +46,8 @@ export function createFakeBackend() {
     student_profile: new Map(), // id -> row
     review: [],
     contact_request: [],
+    conversation: [],
+    message: [],
     feature_flags: { payments_enabled: false },
     plan_limits: {
       student: { role: "student", free_connections_per_month: 3, yearly_price_amount: 499, yearly_price_currency: "INR" },
@@ -65,6 +67,8 @@ export function createFakeBackend() {
     db.student_profile.clear();
     db.review.length = 0;
     db.contact_request.length = 0;
+    db.conversation.length = 0;
+    db.message.length = 0;
     db.feature_flags.payments_enabled = false;
     db.subscription.clear();
     db.payment_transaction.clear();
@@ -350,6 +354,75 @@ export function createFakeBackend() {
           if (!(body.rating >= 1 && body.rating <= 5)) return error(res, 400, "new row for relation review violates check constraint");
           const row = { id: crypto.randomUUID(), teacher_id: body.teacher_id, reviewer_id: body.reviewer_id, rating: body.rating, comment: body.comment ?? null, created_at: new Date().toISOString() };
           db.review.push(row);
+          return json(res, 201, [row]);
+        }
+      }
+
+      // ---- conversation ----
+      if (url.pathname === "/conversation") {
+        if (req.method === "GET") {
+          let rows = db.conversation.filter((r) => rowMatches(r, filters));
+          rows = rows.filter((r) => requester && (r.teacher_id === requester.id || r.requester_id === requester.id));
+          return json(res, 200, rows.map((r) => project(r, select)));
+        }
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          if (!requester || body.requester_id !== requester.id) return error(res, 403, "row-level security policy violation");
+          const connected = db.contact_request.some((c) => c.teacher_id === body.teacher_id && c.requester_id === body.requester_id);
+          if (!connected) return error(res, 403, "new row violates row-level security policy for table conversation");
+          if (db.conversation.some((c) => c.teacher_id === body.teacher_id && c.requester_id === body.requester_id)) {
+            return error(res, 409, "duplicate key value violates unique constraint");
+          }
+          const row = { id: crypto.randomUUID(), teacher_id: body.teacher_id, requester_id: body.requester_id, created_at: new Date().toISOString() };
+          db.conversation.push(row);
+          return json(res, 201, [row]);
+        }
+      }
+
+      // ---- conversation_thread (read-model, mirrors 0015_messages.sql's view) ----
+      if (url.pathname === "/conversation_thread" && req.method === "GET") {
+        let rows = db.conversation
+          .filter((c) => requester && (c.teacher_id === requester.id || c.requester_id === requester.id))
+          .map((c) => {
+            const teacher = db.users.get(c.teacher_id);
+            const req_ = db.users.get(c.requester_id);
+            const tp = db.teacher_profile.get(c.teacher_id);
+            const iAmTeacher = c.teacher_id === requester.id;
+            return {
+              conversation_id: c.id,
+              teacher_id: c.teacher_id,
+              requester_id: c.requester_id,
+              created_at: c.created_at,
+              teacher_display_name: tp?.name ?? null,
+              requester_full_name: iAmTeacher ? req_?.full_name ?? null : null,
+              other_avatar_url: iAmTeacher ? req_?.avatar_url ?? null : teacher?.avatar_url ?? null,
+              other_avatar_seed: iAmTeacher ? req_?.avatar_seed ?? null : teacher?.avatar_seed ?? null,
+            };
+          })
+          .filter((r) => rowMatches(r, filters));
+        rows = applyOrder(rows, order);
+        return json(res, 200, rows.map((r) => project(r, select)));
+      }
+
+      // ---- message ----
+      if (url.pathname === "/message") {
+        const isParticipant = (conversationId) => {
+          const c = db.conversation.find((c) => c.id === conversationId);
+          return Boolean(c && requester && (c.teacher_id === requester.id || c.requester_id === requester.id));
+        };
+        if (req.method === "GET") {
+          let rows = db.message.filter((r) => rowMatches(r, filters));
+          rows = rows.filter((r) => isParticipant(r.conversation_id));
+          rows = applyOrder(rows, order);
+          return json(res, 200, rows.map((r) => project(r, select)));
+        }
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          if (!requester || body.sender_id !== requester.id) return error(res, 403, "row-level security policy violation");
+          if (!isParticipant(body.conversation_id)) return error(res, 403, "new row violates row-level security policy for table message");
+          if (!body.body || !body.body.trim()) return error(res, 400, "new row for relation message violates check constraint");
+          const row = { id: crypto.randomUUID(), conversation_id: body.conversation_id, sender_id: body.sender_id, body: body.body, created_at: new Date().toISOString() };
+          db.message.push(row);
           return json(res, 201, [row]);
         }
       }

@@ -338,3 +338,22 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
   flex: 0 0 auto;
 }
 .donation-qr img { border-radius: 6px; display: block; }
+
+/* Messaging */
+.message-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+.message-bubble {
+  max-width: 75%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+.message-theirs { align-self: flex-start; background: var(--paper); border: 1px solid var(--line); }
+.message-mine { align-self: flex-end; background: var(--accent-soft); }
+.message-bubble .hint { display: block; margin-top: 3px; }

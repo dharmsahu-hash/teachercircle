@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
+import MessageThread from "@/components/MessageThread";
 
 type Contact = { contact_email: string | null; contact_phone: string | null };
 
@@ -10,10 +11,12 @@ export default function ConnectAndReview({
   teacherId,
   signedIn,
   role,
+  userId,
 }: {
   teacherId: string;
   signedIn: boolean;
   role: string | null;
+  userId: string | null;
 }) {
   const [contact, setContact] = useState<Contact | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +24,7 @@ export default function ConnectAndReview({
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [reviewSaved, setReviewSaved] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   async function connect() {
     setBusy(true);
@@ -37,6 +41,16 @@ export default function ConnectAndReview({
       }
       if (!res.ok) throw new Error(data.error || "Could not connect");
       setContact(data.contact);
+      // Best-effort — a message thread is a nice-to-have alongside the
+      // contact reveal above, not something a failure here should block.
+      fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherId }),
+      })
+        .then((r) => r.json())
+        .then((d) => d.conversationId && setConversationId(d.conversationId))
+        .catch(() => {});
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -93,6 +107,13 @@ export default function ConnectAndReview({
         </div>
       )}
       {error && <p className="error">{error}</p>}
+
+      {contact && conversationId && userId && (
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 8px" }}>Message this teacher</h3>
+          <MessageThread conversationId={conversationId} currentUserId={userId} />
+        </div>
+      )}
 
       {contact && !reviewSaved && (
         <form onSubmit={submitReview} style={{ marginTop: 16 }}>

@@ -62,6 +62,7 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
         teacherId={teacher.user_id}
         signedIn={Boolean(user)}
         role={user?.role ?? null}
+        userId={user?.id ?? null}
       />
 
       <h2>Feedback from students &amp; parents</h2>

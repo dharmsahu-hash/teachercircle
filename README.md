@@ -134,6 +134,17 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: in-app messaging, additive to the contact-info reveal**: once connected,
+  either side can now message the other through the app (`db/migrations/0015_messages.sql`,
+  `/messages`, `/messages/[id]`) — kept as its own `conversation`/`message` pair of tables
+  rather than hanging messages off `contact_request`, since that table can accumulate
+  several rows for the same pair over time (once per reconnect) and would have fragmented
+  one conversation across them. Verified for real against the live Supabase project (not
+  just via the migration succeeding) by inserting real rows and querying as `anon`, as
+  the actual participant, and as an unrelated third user directly in `psql` — see
+  `docs/04-test-report.md` §3f for the exact commands and results. No email notification
+  on new messages yet — a natural next step now that Brevo is already wired up for
+  Supabase Auth, just not yet called from this app's own code.
 - **Auth plumbing the docs assumed but never wrote**: `auth.uid()`, the `anon`/
   `authenticated` Postgres roles, and the `auth.users → public.users` sync trigger
   don't exist for free with a plain `postgres:16-alpine` + standalone GoTrue/PostgREST
