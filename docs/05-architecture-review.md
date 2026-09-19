@@ -1,5 +1,10 @@
 # TeacherCircle — Architecture Review & Naming Recommendation
 
+> **Partially superseded** — see `docs/06-review-2026-09-20.md` for security/feature/
+> competitive findings as of the Vercel+Supabase production launch and in-app
+> messaging. This doc predates both and is kept for the parts still accurate
+> (Part B naming discussion, and architecture findings not touched since).
+
 **Date:** 2026-09-19
 **Basis:** direct review of the actual codebase (not the design docs describing it),
 cross-checked against what running the real stack for 111 automated tests actually
