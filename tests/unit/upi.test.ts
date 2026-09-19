@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert";
-import { buildUpiDeepLink, buildUpiQrDataUrl } from "../../lib/upi";
+import { buildUpiDeepLink, buildUpiDonationLink, buildUpiQrDataUrl } from "../../lib/upi";
 
 describe("buildUpiDeepLink — positive cases", () => {
   test("builds a upi://pay link with the configured VPA and name", () => {
@@ -50,6 +50,26 @@ describe("buildUpiDeepLink — negative / edge cases", () => {
     process.env.UPI_PAYEE_VPA = "teacher@upi";
     process.env.UPI_PAYEE_NAME = "TeacherCircle";
     assert.doesNotThrow(() => buildUpiDeepLink(-50, "note"));
+  });
+});
+
+describe("buildUpiDonationLink", () => {
+  test("omits the amount param entirely so the payer's UPI app prompts for one", () => {
+    process.env.UPI_PAYEE_VPA = "teacher@upi";
+    process.env.UPI_PAYEE_NAME = "TeacherCircle";
+    const link = buildUpiDonationLink();
+    const params = new URLSearchParams(link.replace("upi://pay?", ""));
+    assert.strictEqual(params.has("am"), false);
+    assert.strictEqual(params.get("pa"), "teacher@upi");
+    assert.strictEqual(params.get("tn"), "Support TeacherCircle");
+  });
+
+  test("accepts a custom note", () => {
+    process.env.UPI_PAYEE_VPA = "teacher@upi";
+    process.env.UPI_PAYEE_NAME = "TeacherCircle";
+    const link = buildUpiDonationLink("Buy us a coffee");
+    const params = new URLSearchParams(link.replace("upi://pay?", ""));
+    assert.strictEqual(params.get("tn"), "Buy us a coffee");
   });
 });
 

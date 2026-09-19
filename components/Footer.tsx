@@ -33,7 +33,13 @@ export default function Footer() {
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© {year} TeacherCircle — a Knowledgewala product.</span>
+        <span>
+          © {year} TeacherCircle — a{" "}
+          <a href="https://knowledgewala.com" target="_blank" rel="noopener noreferrer">
+            Knowledgewala
+          </a>{" "}
+          product.
+        </span>
       </div>
     </footer>
   );
