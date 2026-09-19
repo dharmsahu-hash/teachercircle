@@ -8,11 +8,11 @@
 
 | Tier | What it validates | Result |
 |---|---|---|
-| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **74 / 74 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **80 / 80 passed** |
+| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **79 / 79 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **95 / 95 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 189 / 189 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
+**Total: 209 / 209 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
 
 ## 3j. P1: basic rate limiting + SEO basics
 
@@ -140,6 +140,66 @@ a teacher with a real reply already in the database from earlier testing.
 exposes the new fields, a real computed response time appears after one
 reply, and the admin-restore regression) plus 5 new unit tests for
 `responseTimeLabel`.
+
+## 3l. P3: security headers, password strength, search pagination + richer filters, dark mode, saved teachers
+
+The rest of the review's backlog, all shipped in one pass.
+
+- **Security headers** (`next.config.mjs`): `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, a restrictive `Permissions-Policy`, and
+  HSTS. Deliberately no CSP — this app relies on inline
+  `<script type="application/ld+json">` (teacher pages) and Next.js's own
+  inline bootstrap; a real CSP needs per-request nonces, which is a bigger
+  change than "basic headers" and easy to ship silently broken rather than
+  skip cleanly.
+- **Server-side password strength** (`lib/password.ts`): length ≥ 8 plus at
+  least two of {lowercase, uppercase, digit, symbol} — NIST 800-63B style
+  (variety, not a "must contain a symbol" regex that just pushes people
+  toward predictable substitutions). Enforced in `/api/auth/signup`, not
+  just the client `minLength` — the client-side check is trivially bypassed
+  by calling the API directly. **Found while adding this**: an existing test
+  (2.3, "signup with already-registered email") used the password
+  `"different"`, which the new check now rejects as weak — the test would
+  have kept passing on `status !== 200` while silently testing the wrong
+  thing (a 400 for weakness, not for the duplicate email). Fixed by
+  strengthening that fixture's password so the test still exercises what it
+  claims to.
+- **Search pagination + richer filters** (`app/search/page.tsx`,
+  `app/api/search/route.ts`): `minPrice`/`maxPrice` (`rate_per_hour`
+  gte/lte) and `minRating` (`avg_rating` gte) query params; pagination via
+  PostgREST's native `limit`/`offset` params, fetching one extra row per
+  page to know whether a next page exists rather than adding an exact-count
+  query. Verified with a genuine 13-teacher fixture in Tier 2 (not a mocked
+  count) — page 1 returns exactly 12, page 2 the 13th, no overlap.
+- **Dark mode**: theme tokens were already CSS variables, so this is a
+  `[data-theme="dark"]` override block plus a `prefers-color-scheme` fallback
+  guarded so an explicit user choice always wins over the OS setting either
+  direction. A blocking inline script in `app/layout.tsx` (not a `useEffect`)
+  applies a stored choice before first paint to avoid a light-mode flash.
+  Found and fixed while checking it visually: `input, textarea, select` had
+  a hardcoded `background: #fff`, so form fields stayed white-on-dark —
+  switched to `var(--card)`.
+- **Saved/favorite teachers** (`favorite_teacher` table,
+  `db/migrations/0024_favorites.sql`, `/api/favorites`, `/favorites` page,
+  `FavoriteButton`): any signed-in user can save a teacher from their
+  profile page and see the list later. `teacher_public` is a view (not a
+  table PostgREST can embed a foreign key through), so the favorites list is
+  two queries — the user's `favorite_teacher` rows, then
+  `teacher_public?user_id=in.(...)` — same pattern already used for
+  `/admin/reports`'s participant lookups.
+
+**Verified for real**: local Docker — security headers checked via `curl -D
+-`; signup with a weak password rejected in the browser; search filters and
+pagination clicked through end to end (page 1 → Next → page 2, with
+distinct results); dark mode toggled in the browser and confirmed to persist
+across navigation via `localStorage`; a teacher saved from their profile
+page and confirmed to appear on `/favorites`, then the whole thing repeated
+on production after deploying.
+
+14 new Tier 2 checks (weak-password rejection, price/rating filters,
+pagination correctness with a real 13-row fixture, save/unsave/list/RLS for
+favorites) plus 5 new unit tests for `passwordStrengthError`.
 
 ## 3i. CRITICAL, pre-existing: `is_admin()` infinite recursion on real Postgres (Supabase), broken since `0005_profile_lifecycle_admin.sql`
 

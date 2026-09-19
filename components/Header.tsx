@@ -4,6 +4,7 @@ import { pg } from "@/lib/db";
 import { SUBSCRIPTION_UI_ENABLED } from "@/lib/featureToggles";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
+import ThemeToggle from "./ThemeToggle";
 import { SearchIcon, BookIcon, ShieldIcon, InfoIcon, BellIcon } from "./icons";
 
 export default async function Header() {
@@ -42,6 +43,11 @@ export default async function Header() {
               <span>Messages</span>
             </Link>
           )}
+          {user && (
+            <Link href="/favorites" className="nav-item">
+              <span aria-hidden>★</span> <span>Saved</span>
+            </Link>
+          )}
           {SUBSCRIPTION_UI_ENABLED && user?.role === "parent" && (
             <Link href="/billing/subscribe" className="nav-item">Subscribe</Link>
           )}
@@ -63,6 +69,7 @@ export default async function Header() {
           ) : (
             <Link href="/login" className="btn">Sign in</Link>
           )}
+          <ThemeToggle />
         </div>
       </nav>
     </header>

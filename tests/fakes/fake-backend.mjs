@@ -61,6 +61,7 @@ export function createFakeBackend() {
     admin_audit_log: [],
     gotruePasswords: new Map(), // email -> password (fake auth store)
     rate_limit_hit: new Map(), // key -> {windowStart, count}, mirrors 0021_rate_limiting.sql
+    favorite_teacher: [],
   };
 
   function reset() {
@@ -80,6 +81,7 @@ export function createFakeBackend() {
     db.admin_audit_log.length = 0;
     db.gotruePasswords.clear();
     db.rate_limit_hit.clear();
+    db.favorite_teacher.length = 0;
   }
 
   function requesterFrom(req) {
@@ -98,7 +100,7 @@ export function createFakeBackend() {
   function parseFilters(url) {
     const filters = {};
     for (const [key, value] of url.searchParams) {
-      if (["select", "order", "limit"].includes(key)) continue;
+      if (["select", "order", "limit", "offset"].includes(key)) continue;
       filters[key] = value;
     }
     return filters;
@@ -118,6 +120,13 @@ export function createFakeBackend() {
       } else if (op === "ilike") {
         const needle = raw.replace(/^\*/, "").replace(/\*$/, "").toLowerCase();
         if (typeof cell !== "string" || !cell.toLowerCase().includes(needle)) return false;
+      } else if (op === "gte") {
+        if (!(Number(cell) >= Number(raw))) return false;
+      } else if (op === "lte") {
+        if (!(Number(cell) <= Number(raw))) return false;
+      } else if (op === "in") {
+        const options = raw.replace(/^\(/, "").replace(/\)$/, "").split(",");
+        if (!options.includes(String(cell))) return false;
       }
     }
     return true;
@@ -313,6 +322,10 @@ export function createFakeBackend() {
       if (url.pathname === "/teacher_public" && req.method === "GET") {
         let rows = teacherPublicRows().filter((r) => rowMatches(r, filters));
         rows = applyOrder(rows, order);
+        const offsetParam = url.searchParams.get("offset");
+        const limitParam = url.searchParams.get("limit");
+        if (offsetParam) rows = rows.slice(Number(offsetParam));
+        if (limitParam) rows = rows.slice(0, Number(limitParam));
         return json(res, 200, rows.map((r) => project(r, select)));
       }
 
@@ -506,6 +519,35 @@ export function createFakeBackend() {
           const before = db.blocked_user.length;
           db.blocked_user = db.blocked_user.filter((r) => !(r.blocker_id === blockerId && r.blocked_id === blockedId));
           return json(res, 200, db.blocked_user.length < before ? [{ blocker_id: blockerId, blocked_id: blockedId }] : []);
+        }
+      }
+
+      // ---- favorite_teacher ----
+      if (url.pathname === "/favorite_teacher") {
+        if (req.method === "GET") {
+          let rows = db.favorite_teacher.filter((r) => rowMatches(r, filters));
+          rows = rows.filter((r) => requester && r.user_id === requester.id);
+          rows = applyOrder(rows, order);
+          return json(res, 200, rows.map((r) => project(r, select)));
+        }
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          if (!requester || body.user_id !== requester.id) return error(res, 403, "row-level security policy violation");
+          if (db.favorite_teacher.some((r) => r.user_id === body.user_id && r.teacher_id === body.teacher_id)) {
+            return error(res, 409, "duplicate key value violates unique constraint");
+          }
+          const row = { user_id: body.user_id, teacher_id: body.teacher_id, created_at: new Date().toISOString() };
+          db.favorite_teacher.push(row);
+          return json(res, 201, [row]);
+        }
+        if (req.method === "DELETE") {
+          if (!requester) return error(res, 401, "not signed in");
+          const userId = filters.user_id?.replace(/^eq\./, "");
+          const teacherId = filters.teacher_id?.replace(/^eq\./, "");
+          if (userId !== requester.id) return error(res, 403, "row-level security policy violation");
+          const before = db.favorite_teacher.length;
+          db.favorite_teacher = db.favorite_teacher.filter((r) => !(r.user_id === userId && r.teacher_id === teacherId));
+          return json(res, 200, db.favorite_teacher.length < before ? [{ user_id: userId, teacher_id: teacherId }] : []);
         }
       }
 

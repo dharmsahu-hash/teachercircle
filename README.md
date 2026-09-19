@@ -134,6 +134,20 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: P3 — security headers, password strength, search pagination +
+  filters, dark mode, saved teachers**: basic security headers
+  (`next.config.mjs`, deliberately no CSP — see below), server-side password
+  strength on signup (`lib/password.ts`, NIST-800-63B-style variety check,
+  not just the client's `minLength`), `minPrice`/`maxPrice`/`minRating`
+  search filters plus real pagination (`limit`/`offset`), dark mode (theme
+  tokens were already CSS variables), and saved/favorite teachers
+  (`db/migrations/0024_favorites.sql`, `/favorites`). **Two small bugs found
+  while building this**: an existing test used password `"different"`,
+  which the new strength check now rejects — it would have kept "passing"
+  while silently testing the wrong thing (weak-password 400, not
+  duplicate-email 400); and `input`/`textarea`/`select` had a hardcoded
+  `background: #fff`, so dark mode left every form field white. Both fixed.
+  See `docs/04-test-report.md` §3l.
 - **New: P2 — honest self-attestation + a real, computed response-time
   signal**: a teacher-side checkbox ("I confirm the information on this
   profile is accurate") sets `teacher_profile.self_attested_at`, with UI copy

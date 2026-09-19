@@ -15,9 +15,24 @@ export const metadata: Metadata = {
   twitter: { card: "summary", title: "TeacherCircle", description },
 };
 
+// Runs before paint so a stored dark-mode choice doesn't flash light first.
+// Inline (not a module) specifically so it blocks — moving this to
+// useEffect in ThemeToggle would run after the first paint instead.
+const themeInitScript = `
+(function () {
+  try {
+    var t = localStorage.getItem("tc_theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>
         <div className="page-shell">
           <Header />

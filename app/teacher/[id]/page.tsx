@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getAppBaseUrl } from "@/lib/url";
 import Avatar from "@/components/Avatar";
 import ConnectAndReview from "./ConnectAndReview";
+import FavoriteButton from "@/components/FavoriteButton";
 import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
 
@@ -98,6 +99,14 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
     (await pg(`/review?teacher_id=eq.${params.id}&select=rating,comment,created_at&order=created_at.desc`)) ?? [];
 
   const user = await getSessionUser().catch(() => null);
+  let isFavorited = false;
+  if (user) {
+    const favRows = await pg(
+      `/favorite_teacher?user_id=eq.${user.id}&teacher_id=eq.${teacher.user_id}&select=teacher_id`,
+      { token: user.token }
+    ).catch(() => []);
+    isFavorited = Boolean(favRows?.length);
+  }
 
   return (
     <div>
@@ -139,6 +148,12 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
       </div>
 
       {teacher.bio && <p style={{ marginTop: 16 }}>{teacher.bio}</p>}
+
+      {user && user.id !== teacher.user_id && (
+        <div style={{ marginTop: 12 }}>
+          <FavoriteButton teacherId={teacher.user_id} initiallySaved={isFavorited} />
+        </div>
+      )}
 
       <ConnectAndReview
         teacherId={teacher.user_id}

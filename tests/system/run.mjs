@@ -166,8 +166,17 @@ async function runScenarios(backend) {
   }
   {
     const c = makeClient();
-    const r = await c.post("/api/auth/signup", { email: "teacher1@test.local", password: "different" });
+    // Strong enough to clear the new password-strength check (P3) so this
+    // actually exercises the duplicate-email path it's meant to test —
+    // "different" alone would now be rejected as weak first, silently
+    // testing the wrong thing while still passing on `status !== 200`.
+    const r = await c.post("/api/auth/signup", { email: "teacher1@test.local", password: "Different123" });
     check("2.3 Signup with already-registered email -> non-200", r.status !== 200, `got ${r.status}`);
+  }
+  {
+    const c = makeClient();
+    const r = await c.post("/api/auth/signup", { email: "weakpw@test.local", password: "aaaaaaaa" });
+    check("2.3b P3: weak password (single character class) -> 400, not created", r.status === 400 && /too weak/i.test(r.body?.error ?? ""), JSON.stringify(r.body));
   }
   {
     const c = makeClient();
@@ -617,6 +626,75 @@ async function runScenarios(backend) {
     // under every limit and must still succeed.
     const r = await teacherClient.post(`/api/conversations/${conversationId}/messages`, { body: "One more, still well under the limit." });
     check("14.3 A single additional message is not rate-limited", r.status === 200, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+
+  // ---------- 15. Search filters + pagination (P3) ----------
+  {
+    // Meera (Maths/Physics, Bengaluru, ₹500/hr, avg_rating 5 from 7.1) is
+    // already in the fixture set at this point in the suite.
+    const r = await teacherClient.get("/api/search?subject=Maths&minPrice=600");
+    check("15.1 minPrice filter excludes a teacher priced below it", r.status === 200 && !r.body.some((t) => t.name === "Meera R."), JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.get("/api/search?subject=Maths&maxPrice=600");
+    check("15.2 maxPrice filter includes a teacher priced at or below it", r.status === 200 && r.body.some((t) => t.name === "Meera R."), JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.get("/api/search?subject=Maths&minRating=4");
+    check("15.3 minRating filter includes a teacher rated at or above it", r.status === 200 && r.body.some((t) => t.name === "Meera R."), JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.get("/api/search?subject=Maths&minRating=6");
+    check("15.4 minRating filter excludes everyone when set above the maximum possible rating", r.status === 200 && r.body.length === 0, JSON.stringify(r.body));
+  }
+  {
+    // 13 teachers sharing one subject — one more than a single page (12) —
+    // to genuinely exercise limit/offset rather than asserting on a mocked count.
+    for (let i = 0; i < 13; i++) {
+      const c = makeClient();
+      await c.post("/api/auth/signup", { email: `pagetest${i}@test.local`, password: "pw123456" });
+      await c.post("/api/auth/role", { role: "teacher" });
+      await c.post("/api/teacher/profile", { name: `Page Test ${i}`, subjects: "PageTestSubject", city: "Nowhere", is_listed: true });
+    }
+    const page1 = await teacherClient.get("/api/search?subject=PageTestSubject");
+    check("15.5 Page 1 returns exactly a full page (12), not all 13", page1.status === 200 && page1.body.length === 12, `got ${page1.body?.length}`);
+
+    const page2 = await teacherClient.get("/api/search?subject=PageTestSubject&page=2");
+    check("15.6 Page 2 returns the remaining 1 result", page2.status === 200 && page2.body.length === 1, `got ${page2.body?.length}`);
+
+    const page1Ids = new Set(page1.body.map((t) => t.user_id));
+    check("15.7 Page 2's result doesn't overlap page 1's", !page1Ids.has(page2.body[0]?.user_id), JSON.stringify({ page1Ids: [...page1Ids], page2: page2.body[0]?.user_id }));
+  }
+
+  // ---------- 16. Saved/favorite teachers (P3) ----------
+  {
+    const r = await studentClient.post("/api/favorites", { teacherId: meeraId });
+    check("16.1 Saving a teacher -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    // Saving the same teacher twice is a no-op, not an error — the caller
+    // only cares about the end state ("this is saved"), same as the
+    // block/report duplicate-handling pattern elsewhere in this suite.
+    const r = await studentClient.post("/api/favorites", { teacherId: meeraId });
+    check("16.2 Saving the same teacher again is idempotent, not an error", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.get("/api/favorites");
+    check("16.3 Favorites list includes the saved teacher with real profile data", r.status === 200 && r.body.some((t) => t.user_id === meeraId && t.name === "Meera R."), JSON.stringify(r.body));
+  }
+  {
+    const r = await teacher2Client.get("/api/favorites");
+    check("16.4 Another user's favorites list is empty (RLS: own rows only)", r.status === 200 && r.body.length === 0, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.del(`/api/favorites/${meeraId}`);
+    check("16.5 Unsaving a teacher -> 200", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+    const after = await studentClient.get("/api/favorites");
+    check("16.6 Favorites list no longer includes the unsaved teacher", after.status === 200 && !after.body.some((t) => t.user_id === meeraId), JSON.stringify(after.body));
+  }
+  {
+    const r = await makeClient().get("/api/favorites");
+    check("16.7 GET favorites without a session -> 401", r.status === 401, `got ${r.status}`);
   }
 }
 
