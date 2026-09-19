@@ -73,5 +73,15 @@ function normalize(body: any, fallback: any = {}) {
     contact_email: body.contact_email ?? fallback.contact_email ?? null,
     contact_phone: body.contact_phone ?? fallback.contact_phone ?? null,
     is_listed: body.is_listed ?? fallback.is_listed ?? true,
+    // The form always sends the checkbox's current boolean state on every
+    // save. Re-checking an already-checked box must not bump the timestamp
+    // forward on every unrelated profile edit — only a real true transition
+    // (previously unset) sets it "now."
+    self_attested_at:
+      body.self_attested === true
+        ? fallback.self_attested_at ?? new Date().toISOString()
+        : body.self_attested === false
+          ? null
+          : fallback.self_attested_at ?? null,
   };
 }

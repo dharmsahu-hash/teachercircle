@@ -241,6 +241,29 @@ async function runScenarios(backend) {
     );
   }
 
+  // ---------- 4c. P2: self-attestation (honest, teacher-declared only) ----------
+  let firstAttestedAt;
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { name: "Meera R.", city: "Bengaluru", is_listed: true, self_attested: true });
+    firstAttestedAt = r.body?.self_attested_at;
+    check("4c.1 Checking self-attestation sets self_attested_at -> 200", r.status === 200 && Boolean(firstAttestedAt), JSON.stringify(r.body));
+  }
+  {
+    // Saving again with the box still checked must NOT bump the timestamp
+    // forward on every unrelated edit — it should read as "when they first
+    // confirmed," not "when they last saved anything."
+    const r = await teacherClient.post("/api/teacher/profile", { name: "Meera R.", city: "Pune", is_listed: true, self_attested: true });
+    check("4c.2 Re-saving with the box still checked preserves the original timestamp", r.status === 200 && r.body?.self_attested_at === firstAttestedAt, JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { name: "Meera R.", city: "Pune", is_listed: true, self_attested: false });
+    check("4c.3 Unchecking clears self_attested_at", r.status === 200 && r.body?.self_attested_at === null, JSON.stringify(r.body));
+  }
+  {
+    // Re-listed as attested for the rest of the suite (e.g. search visibility below).
+    await teacherClient.post("/api/teacher/profile", { name: "Meera R.", city: "Bengaluru", is_listed: true, self_attested: true });
+  }
+
   // A second teacher, unlisted, for search-visibility negative tests.
   const teacher2Client = makeClient();
   await teacher2Client.post("/api/auth/signup", { email: "teacher2@test.local", password: "pw123456" });
@@ -251,6 +274,8 @@ async function runScenarios(backend) {
   {
     const r = await teacherClient.get("/api/search?subject=Maths");
     check("5.1 Search by matching subject -> finds the teacher", r.status === 200 && r.body.some((t) => t.name === "Meera R."), JSON.stringify(r.body));
+    const meera = r.body.find((t) => t.name === "Meera R.");
+    check("5.1b Search results include self_attested_at for a self-confirmed teacher", Boolean(meera?.self_attested_at), JSON.stringify(meera));
   }
   {
     const r = await teacherClient.get("/api/search?subject=French");
@@ -362,6 +387,14 @@ async function runScenarios(backend) {
     check("9.7 Admin restores the profile -> 200", r.status === 200, JSON.stringify(r.body));
     const auditRows = backend.db.admin_audit_log.filter((a) => a.target_id === meeraId);
     check("9.7b Both delete and restore are recorded in the audit log", auditRows.length >= 2, `${auditRows.length} entries`);
+  }
+  {
+    // Real bug found while adding P2 tests, unrelated to P2 itself: restore
+    // used to only clear deleted_at and never re-set is_listed, so a
+    // restored profile stayed permanently invisible in search. Fixed in
+    // 0023_fix_admin_restore_relisting.sql.
+    const r = await studentClient.get("/api/search?subject=Maths");
+    check("9.7c Restored profile is searchable again (not permanently unlisted)", r.status === 200 && r.body.some((t) => t.user_id === meeraId), JSON.stringify(r.body));
   }
   // FR-21: admin creates a profile for an already-registered, profile-less teacher.
   const teacher3Client = makeClient();
@@ -481,6 +514,18 @@ async function runScenarios(backend) {
   {
     const r = await teacherClient.get("/api/conversations");
     check("12.8 Conversation list includes this thread for the teacher", r.status === 200 && r.body.some((c) => c.conversation_id === conversationId), JSON.stringify(r.body));
+  }
+  {
+    // P2: teacher_response_time is computed from the real reply that just
+    // happened in 12.6 (the requester's first message -> the teacher's first
+    // reply after it) — not hand-set test fixture data.
+    const r = await teacherClient.get("/api/search?subject=Maths");
+    const meera = r.body.find((t) => t.name === "Meera R.");
+    check(
+      "12.9 Search results reflect a real computed response time after one reply",
+      meera?.replied_conversation_count === 1 && typeof meera?.avg_response_hours === "number" && meera.avg_response_hours >= 0,
+      JSON.stringify(meera)
+    );
   }
 
   // ---------- 13. Block + report ----------

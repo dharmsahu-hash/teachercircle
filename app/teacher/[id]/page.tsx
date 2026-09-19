@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getAppBaseUrl } from "@/lib/url";
 import Avatar from "@/components/Avatar";
 import ConnectAndReview from "./ConnectAndReview";
+import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +22,14 @@ type TeacherRow = {
   is_subscribed: boolean;
   avatar_url: string | null;
   avatar_seed: string | null;
+  self_attested_at: string | null;
+  avg_response_hours: number | null;
+  replied_conversation_count: number | null;
 };
 
 async function getTeacher(id: string): Promise<TeacherRow | null> {
   const rows = await pg(
-    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed`
+    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count`
   );
   return Array.isArray(rows) ? rows[0] ?? null : null;
 }
@@ -121,6 +125,16 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
           <p className="stars" style={{ margin: "8px 0 0" }}>
             {teacher.review_count > 0 ? `★ ${teacher.avg_rating} (${teacher.review_count} feedback)` : "No feedback yet"}
           </p>
+          {teacher.self_attested_at && (
+            <p className="hint" style={{ margin: "6px 0 0", fontSize: 13 }} title="Self-declared by the teacher, not a background or identity check">
+              ✓ Self-confirmed profile
+            </p>
+          )}
+          {responseTimeLabel(teacher.avg_response_hours, teacher.replied_conversation_count) && (
+            <p className="hint" style={{ margin: "2px 0 0", fontSize: 13 }}>
+              {responseTimeLabel(teacher.avg_response_hours, teacher.replied_conversation_count)}
+            </p>
+          )}
         </div>
       </div>
 

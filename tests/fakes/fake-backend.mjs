@@ -152,6 +152,27 @@ export function createFakeBackend() {
     });
   }
 
+  // Mirrors teacher_response_time (0022_verification_and_response_time.sql):
+  // for each conversation, the gap between the requester's first message and
+  // the teacher's first reply after it, averaged across conversations that
+  // actually got a reply.
+  function responseTimeFor(teacherId) {
+    const hours = [];
+    for (const c of db.conversation.filter((c) => c.teacher_id === teacherId)) {
+      const msgs = db.message.filter((m) => m.conversation_id === c.id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const firstMsg = msgs.find((m) => m.sender_id === c.requester_id);
+      if (!firstMsg) continue;
+      const firstReply = msgs.find((m) => m.sender_id === teacherId && new Date(m.created_at) > new Date(firstMsg.created_at));
+      if (!firstReply) continue;
+      hours.push((new Date(firstReply.created_at) - new Date(firstMsg.created_at)) / 3_600_000);
+    }
+    if (!hours.length) return { avg_response_hours: null, replied_conversation_count: 0 };
+    return {
+      avg_response_hours: hours.reduce((s, h) => s + h, 0) / hours.length,
+      replied_conversation_count: hours.length,
+    };
+  }
+
   function teacherPublicRows() {
     const rows = [];
     for (const tp of db.teacher_profile.values()) {
@@ -162,6 +183,7 @@ export function createFakeBackend() {
         ...tp,
         avg_rating: Math.round(avg * 100) / 100,
         review_count: reviews.length,
+        ...responseTimeFor(tp.user_id),
       });
     }
     return rows;
@@ -269,6 +291,7 @@ export function createFakeBackend() {
             is_subscribed: false,
             subscription_expires_at: null,
             deleted_at: null,
+            self_attested_at: body.self_attested_at ?? null,
           };
           db.teacher_profile.set(body.user_id, row);
           return json(res, 201, [row]);
@@ -693,7 +716,7 @@ export function createFakeBackend() {
           const user = db.users.get(target);
           if (user) user.deleted_at = null;
           const tp = db.teacher_profile.get(target);
-          if (tp) tp.deleted_at = null;
+          if (tp) { tp.deleted_at = null; tp.is_listed = true; }
           db.admin_audit_log.push({ id: crypto.randomUUID(), actor_id: requester.id, target_table: "users", target_id: target, action: "update", created_at: new Date().toISOString() });
           return json(res, 200, undefined);
         }

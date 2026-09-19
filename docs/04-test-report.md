@@ -8,11 +8,11 @@
 
 | Tier | What it validates | Result |
 |---|---|---|
-| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **70 / 70 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **74 / 74 passed** |
+| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **74 / 74 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **80 / 80 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 179 / 179 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
+**Total: 189 / 189 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, again after message notifications + unread tracking in §3g, and again after report + block in §3h — see those sections for why Tier 3 wasn't re-run for any of them.) **§3h also found and fixed a separate, more severe, pre-existing bug (`is_admin()` infinite recursion) that had nothing to do with report/block itself — see that section.**
 
 ## 3j. P1: basic rate limiting + SEO basics
 
@@ -80,6 +80,66 @@ backend also required each test client to get its own distinct fake IP
 made the 11 pre-existing signup calls in the suite collide with the new
 5/hour/IP limit and break unrelated tests; giving each simulated user their
 own IP is also just more realistic.
+
+## 3k. P2: honest self-attestation + a real, computed response-time signal
+
+From the review: a lightweight, honestly-labeled teacher verification signal
+(explicitly NOT a background check) and a response-time signal computed from
+data that already exists — no new tracking.
+
+**Self-attestation** (`teacher_profile.self_attested_at`,
+`db/migrations/0022_verification_and_response_time.sql`): a checkbox on the
+teacher's own profile form, with the copy right underneath it in the UI
+saying plainly what it isn't: "This is a self-declaration, not a background
+or identity check." Toggling it on sets `self_attested_at = now()`; toggling
+it off clears it. Re-saving the profile with the box already checked does
+NOT bump the timestamp forward — it should read as "when they first
+confirmed," not "when they last touched any field."
+
+**Response-time signal** (`teacher_response_time` view): for each
+conversation, the gap between a requester's first message and the teacher's
+first reply after it, averaged across conversations that got a reply.
+Computed as a plain (non-`security definer`) view — safe to do here for the
+same reason `teacher_public`/`conversation_thread` already are: a view runs
+with its OWNER's privileges, not the querying user's, so it can aggregate
+across every user's `conversation`/`message` rows despite those tables'
+own RLS restricting direct SELECT to participants and admins. Only an
+aggregate number per teacher is exposed — no message content, no requester
+identity.
+
+`lib/responseTime.ts` turns the raw number into an honest, low-precision
+label — never "responds in 4.2 hours," and never shown at all with fewer
+than 3 replied conversations (one lucky or unlucky reply shouldn't read as a
+stable pattern). 5 new unit tests cover the bucket boundaries and the
+minimum-sample-size cutoff.
+
+**Real bug found while writing the Tier 2 regression test for this,
+completely unrelated to P2 itself**: `admin_restore_profile()`
+(`0005_profile_lifecycle_admin.sql`) only ever cleared `deleted_at` — it
+never re-set `teacher_profile.is_listed` back to `true`, even though
+`admin_soft_delete_profile()` explicitly sets `is_listed = false` as part of
+the delete. A restored profile was therefore not actually restored: not
+deleted, but permanently invisible in search, silently, forever (unless the
+teacher happened to separately notice and re-check "Visible in search"
+themselves). No existing test had caught this in however long it's existed,
+because Tier 2 section 9's own checks only assert search visibility right
+after the DELETE step (correctly absent) — nothing previously asserted
+visibility was restored after the RESTORE step. Fixed in
+`db/migrations/0023_fix_admin_restore_relisting.sql`; new check 9.7c
+regression-tests it directly.
+
+**Verified for real**: local Docker — checked the box on a real teacher
+account's profile, confirmed "✓ Self-confirmed profile" renders on both the
+search results grid and the teacher's own public page; confirmed
+`teacher_response_time`'s numbers directly via `psql` against real
+conversation/message rows before trusting the app layer. Production — same
+`teacher_public` columns queried directly and found correctly populated for
+a teacher with a real reply already in the database from earlier testing.
+
+6 new Tier 2 checks (self-attestation set/preserve-on-resave/clear, search
+exposes the new fields, a real computed response time appears after one
+reply, and the admin-restore regression) plus 5 new unit tests for
+`responseTimeLabel`.
 
 ## 3i. CRITICAL, pre-existing: `is_admin()` infinite recursion on real Postgres (Supabase), broken since `0005_profile_lifecycle_admin.sql`
 

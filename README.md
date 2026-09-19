@@ -134,6 +134,21 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: P2 — honest self-attestation + a real, computed response-time
+  signal**: a teacher-side checkbox ("I confirm the information on this
+  profile is accurate") sets `teacher_profile.self_attested_at`, with UI copy
+  explicit that it's a self-declaration, not a background/identity check.
+  `teacher_response_time` (`db/migrations/0022_verification_and_response_time.sql`)
+  computes each teacher's typical first-reply time from real
+  conversation/message timestamps — same "plain view bypasses RLS via owner
+  privileges" pattern as `teacher_public`. `lib/responseTime.ts` buckets it
+  into an honest, low-precision label, never shown with fewer than 3 replied
+  conversations. **Real bug found writing the regression test for this,
+  unrelated to P2**: `admin_restore_profile()` never re-listed a teacher
+  after `admin_soft_delete_profile()` unlisted them — "restore" only cleared
+  `deleted_at`, leaving the profile permanently invisible in search. Fixed
+  in `db/migrations/0023_fix_admin_restore_relisting.sql`. See
+  `docs/04-test-report.md` §3k.
 - **New: P1 — basic rate limiting + SEO basics**: a Postgres-backed
   fixed-window rate limiter (`db/migrations/0021_rate_limiting.sql`,
   `lib/rateLimit.ts`) — no Redis in this deployment — on login (10/5min/IP),

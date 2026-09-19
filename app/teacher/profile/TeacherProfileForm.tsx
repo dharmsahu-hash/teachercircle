@@ -14,6 +14,7 @@ type Profile = {
   contact_email?: string;
   contact_phone?: string;
   is_listed?: boolean;
+  self_attested_at?: string | null;
 } | null;
 
 export default function TeacherProfileForm({ initial }: { initial: Profile }) {
@@ -29,6 +30,7 @@ export default function TeacherProfileForm({ initial }: { initial: Profile }) {
     contact_email: initial?.contact_email ?? "",
     contact_phone: initial?.contact_phone ?? "",
     is_listed: initial?.is_listed ?? true,
+    self_attested: Boolean(initial?.self_attested_at),
   });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -119,6 +121,19 @@ export default function TeacherProfileForm({ initial }: { initial: Profile }) {
           />
           Visible in search
         </label>
+
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={form.self_attested}
+            onChange={(e) => set("self_attested", e.target.checked)}
+          />
+          I confirm the information on this profile is accurate
+        </label>
+        <p className="hint" style={{ marginTop: -8 }}>
+          This is a self-declaration, not a background or identity check — it just tells
+          students and parents you've reviewed your own listing.
+        </p>
 
         {error && <p className="error">{error}</p>}
         <div className="row">

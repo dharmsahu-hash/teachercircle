@@ -2,6 +2,7 @@ import Link from "next/link";
 import { pg } from "@/lib/db";
 import Avatar from "@/components/Avatar";
 import { SearchIcon, LocationIcon } from "@/components/icons";
+import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,9 @@ type Teacher = {
   is_subscribed: boolean;
   avatar_url: string | null;
   avatar_seed: string | null;
+  self_attested_at: string | null;
+  avg_response_hours: number | null;
+  replied_conversation_count: number | null;
 };
 
 export default async function SearchPage({
@@ -42,7 +46,7 @@ export default async function SearchPage({
   if (city) filters.push(`city=ilike.*${encodeURIComponent(city)}*`);
   filters.push("order=avg_rating.desc,review_count.desc");
   filters.push(
-    "select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed"
+    "select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count"
   );
 
   const teachers: Teacher[] = (await pg(`/teacher_public?${filters.join("&")}`)) ?? [];
@@ -100,6 +104,16 @@ export default async function SearchPage({
                 <p className="stars" style={{ margin: "8px 0 0" }}>
                   {t.review_count > 0 ? `★ ${t.avg_rating} (${t.review_count})` : "No feedback yet"}
                 </p>
+                {t.self_attested_at && (
+                  <p className="hint" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                    ✓ Self-confirmed profile
+                  </p>
+                )}
+                {responseTimeLabel(t.avg_response_hours, t.replied_conversation_count) && (
+                  <p className="hint" style={{ margin: "2px 0 0", fontSize: 12 }}>
+                    {responseTimeLabel(t.avg_response_hours, t.replied_conversation_count)}
+                  </p>
+                )}
               </div>
             </div>
           </Link>
