@@ -3,7 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { SUBSCRIPTION_UI_ENABLED } from "@/lib/featureToggles";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
-import { SearchIcon, BookIcon, ShieldIcon } from "./icons";
+import { SearchIcon, BookIcon, ShieldIcon, InfoIcon } from "./icons";
 
 export default async function Header() {
   const user = await getSessionUser().catch(() => null);
@@ -18,6 +18,9 @@ export default async function Header() {
         <div className="links">
           <Link href="/search" className="nav-item">
             <SearchIcon /> <span>Search</span>
+          </Link>
+          <Link href="/about" className="nav-item">
+            <InfoIcon /> <span>About</span>
           </Link>
           {user?.role === "teacher" && (
             <Link href="/teacher/profile" className="nav-item">

@@ -27,9 +27,13 @@ export default function Footer() {
           <Link href="/login">List yourself for free</Link>
           <Link href="/teacher/profile">Manage your profile</Link>
         </div>
+        <div className="footer-col">
+          <p className="footer-heading">About</p>
+          <Link href="/about">About TeacherCircle</Link>
+        </div>
       </div>
       <div className="footer-bottom">
-        <span>© {year} TeacherCircle. Open source, self-hosted, $0 to run.</span>
+        <span>© {year} TeacherCircle — a Knowledgewala product.</span>
       </div>
     </footer>
   );
