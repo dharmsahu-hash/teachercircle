@@ -134,6 +134,21 @@ The two design documents described the architecture; turning it into running cod
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: message notifications + unread tracking, plus three real production bugs
+  found running this live**: an email (via Brevo's HTTP API, `lib/email.ts`) now
+  goes to the other participant on every new message, and a red dot marks unread
+  conversations in the header bell and `/messages`, cleared by opening the thread.
+  While shipping this, found and fixed three real bugs on the live site (not from
+  a test): confirmation emails linking to `localhost:3000` in production (our own
+  `/signup` call never passed `redirect_to`, so Supabase fell back to a stale
+  dashboard default — now passed explicitly via `lib/url.ts`'s `getAppBaseUrl()`,
+  shared with the Google OAuth redirect too); sign-out showing a browser
+  "information you are about to submit is not secure" warning (same
+  hardcoded-`http://` bug in the logout redirect, compounded by a 307 preserving
+  the POST method — fixed with `getAppBaseUrl()` + an explicit 303); and real
+  signup failing outright with "Error sending confirmation email" (Brevo's IP
+  allowlist blocking Supabase Cloud's outbound IP — a Brevo dashboard fix, not a
+  code bug — see `docs/04-test-report.md` §3g for all three in full).
 - **New: in-app messaging, additive to the contact-info reveal**: once connected,
   either side can now message the other through the app (`db/migrations/0015_messages.sql`,
   `/messages`, `/messages/[id]`) — kept as its own `conversation`/`message` pair of tables

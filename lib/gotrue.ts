@@ -5,6 +5,8 @@
 // these fetch() calls do below, but Supabase's docs show /authorize called
 // exactly like that (no apikey), so it's only these POST endpoints that need it.
 
+import { getAppBaseUrl } from "./url";
+
 const GOTRUE_URL = process.env.GOTRUE_URL || "http://localhost:9999";
 const SUPABASE_API_KEY = process.env.SUPABASE_API_KEY;
 
@@ -41,7 +43,14 @@ async function gotrue(path: string, body: unknown) {
 }
 
 export async function signUpWithPassword(email: string, password: string): Promise<SignUpResult> {
-  const data = await gotrue("/signup", { email, password });
+  // Without this, Supabase falls back to its dashboard "Site URL" default —
+  // found still pointing at http://localhost:3000 in production, so every
+  // confirmation email sent a real user back to a dev server they can't
+  // reach. Passing it explicitly here makes this correct per-environment
+  // regardless of that dashboard setting. Must match an entry already in
+  // Supabase's Redirect URLs allow-list (same one the Google OAuth flow
+  // uses) or GoTrue silently ignores it.
+  const data = await gotrue("/signup", { email, password, redirect_to: `${getAppBaseUrl()}/auth/callback` });
   if (!data?.access_token) {
     return { confirmationRequired: true, user: { id: data.id, email: data.email } };
   }

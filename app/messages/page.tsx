@@ -15,6 +15,7 @@ type ConversationRow = {
   requester_full_name: string | null;
   other_avatar_url: string | null;
   other_avatar_seed: string | null;
+  has_unread: boolean;
 };
 
 export default async function MessagesPage() {
@@ -40,15 +41,22 @@ export default async function MessagesPage() {
         // side of a thread they're already a party to.
         const otherLabel = iAmTeacher ? c.requester_full_name ?? "A student/parent" : c.teacher_display_name;
         return (
-          <Link href={`/messages/${c.conversation_id}`} key={c.conversation_id} className="teacher-card card">
-            <div className="row" style={{ gap: 12 }}>
-              <Avatar avatarUrl={c.other_avatar_url} avatarSeed={c.other_avatar_seed} label={otherLabel} />
-              <div>
-                <b>{otherLabel}</b>
-                <p className="hint" style={{ margin: "2px 0 0" }}>
-                  {iAmTeacher ? "Interested in your lessons" : "Your conversation"}
-                </p>
+          <Link
+            href={`/messages/${c.conversation_id}`}
+            key={c.conversation_id}
+            className={`teacher-card card${c.has_unread ? " conversation-unread" : ""}`}
+          >
+            <div className="row" style={{ gap: 12, justifyContent: "space-between" }}>
+              <div className="row" style={{ gap: 12 }}>
+                <Avatar avatarUrl={c.other_avatar_url} avatarSeed={c.other_avatar_seed} label={otherLabel} />
+                <div>
+                  <b>{otherLabel}</b>
+                  <p className="hint" style={{ margin: "2px 0 0" }}>
+                    {iAmTeacher ? "Interested in your lessons" : "Your conversation"}
+                  </p>
+                </div>
               </div>
+              {c.has_unread && <span className="unread-dot" aria-label="Unread messages" />}
             </div>
           </Link>
         );

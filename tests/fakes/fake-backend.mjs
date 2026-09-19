@@ -397,6 +397,9 @@ export function createFakeBackend() {
               requester_full_name: iAmTeacher ? req_?.full_name ?? null : null,
               other_avatar_url: iAmTeacher ? req_?.avatar_url ?? null : teacher?.avatar_url ?? null,
               other_avatar_seed: iAmTeacher ? req_?.avatar_seed ?? null : teacher?.avatar_seed ?? null,
+              has_unread: db.message.some(
+                (m) => m.conversation_id === c.id && m.sender_id !== requester.id && !m.read_at
+              ),
             };
           })
           .filter((r) => rowMatches(r, filters));
@@ -421,7 +424,7 @@ export function createFakeBackend() {
           if (!requester || body.sender_id !== requester.id) return error(res, 403, "row-level security policy violation");
           if (!isParticipant(body.conversation_id)) return error(res, 403, "new row violates row-level security policy for table message");
           if (!body.body || !body.body.trim()) return error(res, 400, "new row for relation message violates check constraint");
-          const row = { id: crypto.randomUUID(), conversation_id: body.conversation_id, sender_id: body.sender_id, body: body.body, created_at: new Date().toISOString() };
+          const row = { id: crypto.randomUUID(), conversation_id: body.conversation_id, sender_id: body.sender_id, body: body.body, created_at: new Date().toISOString(), read_at: null };
           db.message.push(row);
           return json(res, 201, [row]);
         }
@@ -529,6 +532,29 @@ export function createFakeBackend() {
           if (!connected) return error(res, 400, "not connected");
           const tp = db.teacher_profile.get(args.target_teacher_id);
           return json(res, 200, { contact_email: tp?.contact_email ?? null, contact_phone: tp?.contact_phone ?? null });
+        }
+
+        if (fn === "get_conversation_partner_email") {
+          if (!requester) return error(res, 401, "not signed in");
+          const c = db.conversation.find((c) => c.id === args.p_conversation_id);
+          if (!c) return error(res, 400, "conversation not found");
+          if (c.teacher_id !== requester.id && c.requester_id !== requester.id) return error(res, 400, "not a participant");
+          const otherId = c.teacher_id === requester.id ? c.requester_id : c.teacher_id;
+          return json(res, 200, db.users.get(otherId)?.email ?? null);
+        }
+
+        if (fn === "mark_conversation_read") {
+          if (!requester) return error(res, 401, "not signed in");
+          const c = db.conversation.find((c) => c.id === args.p_conversation_id);
+          if (!c || (c.teacher_id !== requester.id && c.requester_id !== requester.id)) {
+            return error(res, 400, "not a participant");
+          }
+          for (const m of db.message) {
+            if (m.conversation_id === args.p_conversation_id && m.sender_id !== requester.id && !m.read_at) {
+              m.read_at = new Date().toISOString();
+            }
+          }
+          return json(res, 200, undefined);
         }
 
         if (fn === "approve_payment") {

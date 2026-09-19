@@ -35,13 +35,14 @@ export function ShieldIcon({ size = 16 }: IconProps) {
   );
 }
 
-export function MessageIcon({ size = 16 }: IconProps) {
+export function BellIcon({ size = 16 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M3 5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-4.5 4v-4H5.5A2.5 2.5 0 0 1 3 13.5v-8Z"
+        d="M6 9a6 6 0 1 1 12 0c0 3 1 4.5 1.5 5.5H4.5C5 13.5 6 12 6 9Z"
         stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"
       />
+      <path d="M9.5 17.5a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

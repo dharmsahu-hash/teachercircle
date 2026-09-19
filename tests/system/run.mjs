@@ -432,12 +432,34 @@ async function runScenarios(backend) {
     check("12.4 Abusive message body -> rejected", r.status === 400, `got ${r.status}: ${JSON.stringify(r.body)}`);
   }
   {
+    const r = await teacherClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("12.4b Unread student message shows has_unread=true for the teacher", r.status === 200 && convo?.has_unread === true, JSON.stringify(convo));
+  }
+  {
     const r = await teacherClient.get(`/api/conversations/${conversationId}/messages`);
     check("12.5 The other participant (teacher) can read the thread", r.status === 200 && r.body.some((m) => m.body === "Hi, is Tuesday evening free?"), JSON.stringify(r.body));
   }
   {
+    // Viewing the thread above should have marked it read.
+    const r = await teacherClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("12.5b Viewing the thread marks it read (has_unread=false afterward)", r.status === 200 && convo?.has_unread === false, JSON.stringify(convo));
+  }
+  {
     const r = await teacherClient.post(`/api/conversations/${conversationId}/messages`, { body: "Yes, 6pm works!" });
     check("12.6 The teacher can reply in the same conversation", r.status === 200 && r.body?.sender_id, JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("12.6b The teacher's reply now shows has_unread=true for the student", r.status === 200 && convo?.has_unread === true, JSON.stringify(convo));
+  }
+  {
+    await studentClient.get(`/api/conversations/${conversationId}/messages`);
+    const r = await studentClient.get("/api/conversations");
+    const convo = r.body.find((c) => c.conversation_id === conversationId);
+    check("12.6c Student viewing the thread marks the teacher's reply read too", r.status === 200 && convo?.has_unread === false, JSON.stringify(convo));
   }
   {
     const r = await teacher2Client.get(`/api/conversations/${conversationId}/messages`);

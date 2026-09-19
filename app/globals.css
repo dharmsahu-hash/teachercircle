@@ -358,3 +358,17 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 .message-theirs { align-self: flex-start; background: var(--paper); border: 1px solid var(--line); }
 .message-mine { align-self: flex-end; background: var(--accent-soft); }
 .message-bubble .hint { display: block; margin-top: 3px; }
+
+/* Unread indicators */
+.unread-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.nav-item-bell { position: relative; }
+.nav-item-bell .unread-dot { position: absolute; top: 4px; left: 14px; }
+.conversation-unread { border-color: var(--accent); background: var(--accent-soft); }
+.conversation-unread b { color: var(--ink); }

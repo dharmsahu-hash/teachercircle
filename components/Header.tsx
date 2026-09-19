@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
+import { pg } from "@/lib/db";
 import { SUBSCRIPTION_UI_ENABLED } from "@/lib/featureToggles";
 import Avatar from "./Avatar";
 import Logo from "./Logo";
-import { SearchIcon, BookIcon, ShieldIcon, InfoIcon, MessageIcon } from "./icons";
+import { SearchIcon, BookIcon, ShieldIcon, InfoIcon, BellIcon } from "./icons";
 
 export default async function Header() {
   const user = await getSessionUser().catch(() => null);
+  const hasUnread = user
+    ? Boolean(
+        (await pg(`/conversation_thread?select=conversation_id&has_unread=eq.true&limit=1`, {
+          token: user.token,
+        }).catch(() => []))?.length
+      )
+    : false;
 
   return (
     <header className="site-header">
@@ -28,8 +36,10 @@ export default async function Header() {
             </Link>
           )}
           {user && (
-            <Link href="/messages" className="nav-item">
-              <MessageIcon /> <span>Messages</span>
+            <Link href="/messages" className="nav-item nav-item-bell">
+              <BellIcon />
+              {hasUnread && <span className="unread-dot" aria-label="Unread messages" />}
+              <span>Messages</span>
             </Link>
           )}
           {SUBSCRIPTION_UI_ENABLED && user?.role === "parent" && (

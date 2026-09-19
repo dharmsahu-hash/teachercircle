@@ -8,11 +8,63 @@
 
 | Tier | What it validates | Result |
 |---|---|---|
-| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **59 / 59 passed** |
-| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **54 / 54 passed** |
+| 1 — Unit | Pure logic + business rules in `lib/*.ts`, against the real production source | **66 / 66 passed** |
+| 2 — System/integration (fake backend) | Every real route handler, over real HTTP, against a hand-written model of GoTrue/PostgREST/RLS | **58 / 58 passed** |
 | 3 — Full system (real stack) | The actual SQL migrations, real RLS policies, real GoTrue, real PostgREST, real Docker deployment | **35 / 35 passed** |
 
-**Total: 148 / 148 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, and again after in-app messaging in §3f — see §3f for why Tier 3 wasn't re-run for this one specifically.)
+**Total: 159 / 159 checks passing**, executed against real, unmodified production code — not a document describing what should happen. (Both real-stack tiers were re-run again after wiring up Google login and found two more real bugs — see §3b/§4, again after adding `admin_add_teacher()` and seed data — see §3c, again after the header/footer/avatar-picker redesign in §3d, again after the search/profile UI redesign + feedback moderation in §3e, again after in-app messaging in §3f, and again after message notifications + unread tracking in §3g — see those sections for why Tier 3 wasn't re-run for either.)
+
+## 3g. Message notifications + unread tracking, plus three real bugs found running this live
+
+Adds an email notification (via Brevo's HTTP API, `lib/email.ts`) sent to the other
+participant whenever a message is sent, and read/unread tracking on `message`
+(`db/migrations/0016_conversation_partner_email.sql`,
+`0017_message_read_state.sql`) — an unread dot on the header's bell icon and on
+unread conversations in `/messages`, cleared by viewing the thread (same UX as
+opening an email).
+
+**Three real production bugs found and fixed during this pass, none from a test —
+all from actually using the live site and reading logs:**
+
+1. **Confirmation emails linked to `localhost:3000` in production.** Root cause:
+   our own `/signup` call never passed `redirect_to`, so Supabase fell back to its
+   dashboard "Site URL" default, still the local value. Fixed by having
+   `signUpWithPassword()` pass `redirect_to` explicitly (extracted into
+   `lib/url.ts`'s `getAppBaseUrl()`, now shared with the Google OAuth redirect and
+   the notification email's link) — correct per-environment regardless of that
+   dashboard setting, which the user was also asked to fix directly.
+2. **Sign-out showed "The information you are about to submit is not secure."**
+   Same hardcoded-`http://` bug as #1, in `app/api/auth/logout/route.ts`'s
+   redirect target — a 307 (the `NextResponse.redirect` default) preserves the
+   request method, so redirecting a POST from `https://` to a stale `http://`
+   target asks the browser to resubmit the form insecurely. Fixed by using
+   `getAppBaseUrl()` and an explicit 303 status (GET on the follow-up, which is
+   what a POST-then-redirect-home should be regardless).
+3. **Real signup failed outright with "Error sending confirmation email."**
+   Traced via Supabase's Auth-source log (not the Edge/gateway log, which only
+   showed a bare 500) to `525 unauthorized IP address` — Brevo's IP-allowlist
+   security feature blocking Supabase Cloud's outbound sending IP. Not a code bug;
+   fixed in Brevo's dashboard (Settings → Security → Authorized IPs → Deactivate
+   blocking), the standard resolution for this exact managed-BaaS-to-managed-SMTP
+   combination since Supabase has no fixed outbound IP to allowlist instead.
+   Verified fixed with a real signup attempt on the live site afterward.
+
+**Verified for real** (same standard as §3f): inserted real conversation/message
+rows via `psql`, then confirmed `has_unread`/`mark_conversation_read()`/
+`get_conversation_partner_email()` all behave correctly by switching
+`SET ROLE authenticated` + `request.jwt.claims` between the two real participants —
+this time inside an explicit transaction rolled back at the end, so no cleanup
+(and no repeat of the blocked-`DELETE` situation from §3f) was needed. Also
+verified the full UI live locally: unread dot appears on the bell icon and the
+conversation card, both clear immediately after opening the thread.
+
+7 new unit tests (`lib/email.ts` with `fetch` mocked, `lib/url.ts`), 4 new Tier 2
+checks (unread state through a full send → view → reply → view cycle). No new
+Tier 3 checks for the same reason as §3f — the manual real-database verification
+above covers the RLS/security-relevant surface this feature actually depends on.
+
+**Not built**: no push notifications, no digest/batching (every message sends its
+own email immediately) — fine at this scale, worth revisiting if volume grows.
 
 ## 3f. In-app messaging (new capability)
 
