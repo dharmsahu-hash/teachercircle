@@ -1,6 +1,8 @@
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
+import AdSense from "@/components/AdSense";
 import { getAppBaseUrl } from "@/lib/url";
 import type { Metadata } from "next";
 
@@ -32,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <AdSense />
       </head>
       <body>
         <div className="page-shell">
@@ -39,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="container">{children}</div>
           <Footer />
         </div>
+        <GoogleAnalytics />
       </body>
     </html>
   );

@@ -30,6 +30,7 @@ export default function Footer() {
         <div className="footer-col">
           <p className="footer-heading">About</p>
           <Link href="/about">About TeacherCircle</Link>
+          <Link href="/privacy">Privacy Policy</Link>
         </div>
       </div>
       <div className="footer-bottom">

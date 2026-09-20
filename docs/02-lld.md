@@ -262,3 +262,26 @@ can embed a foreign key through, so the favorites list is two queries: the
 user's own `favorite_teacher` rows, then
 `teacher_public?user_id=in.(...)` — same pattern already used for
 `/admin/reports`'s participant lookups.
+
+## 13. Analytics + monetization (Google Analytics, Google AdSense)
+
+`components/GoogleAnalytics.tsx` and `components/AdSense.tsx` render nothing
+at all unless `NEXT_PUBLIC_GA_MEASUREMENT_ID` / `NEXT_PUBLIC_ADSENSE_CLIENT_ID`
+are set — same "provisioned, not wired until configured" pattern as
+Meilisearch/Redis/MinIO. Both are pure client-loaded `<script>` tags (via
+`next/script`), no server-side code, no new database tables. `app/ads.txt/route.ts`
+is a dynamic route (matching `app/sitemap.ts`/`app/robots.ts`) that derives a
+correct `ads.txt` from the same AdSense env var, rather than a static file
+that would need hand-editing to match it.
+
+Deliberately not built: a cookie-consent banner (Google's EU User Consent
+Policy expects one for EEA/UK visitors; this app is India-focused and a real
+consent-management flow is a feature in its own right, not a line of config)
+and manually-placed ad units (Auto Ads picks placement automatically — the
+lower-maintenance, typically higher-yield default for a site with no
+existing ad-layout data to hand-tune against). `app/privacy/page.tsx` exists
+because AdSense's program policies require a reachable privacy policy
+disclosing cookie/ad-personalization use before they'll approve a site — see
+`docs/03-deployment.md` Step 9 for the full account-setup walkthrough, which
+has to be done by a human in their own Google account regardless of what's
+built here.

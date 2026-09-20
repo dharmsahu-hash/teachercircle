@@ -174,6 +174,60 @@ Still ships UI-disabled — see `lib/featureToggles.ts` (`SUBSCRIPTION_UI_ENABLE
 The underlying flow is unaffected by any of the above and works exactly as it did
 locally once that flag flips.
 
+### Step 9 — Google Analytics + Google AdSense (monetization)
+
+The code for both already exists and does nothing until you set the two env
+vars below — `components/GoogleAnalytics.tsx`, `components/AdSense.tsx`, and
+`app/ads.txt/route.ts`. **The account creation and site-review steps have to
+be done by you, signed into your own Google account** — this isn't something
+that can be scripted or done on your behalf: it requires agreeing to
+Google's own terms of service, and AdSense specifically requires a real
+human review of the live site.
+
+**Google Analytics (a few minutes, no review/approval needed):**
+1. [analytics.google.com](https://analytics.google.com) → sign in with your Google account →
+   Admin → Create Account → Create Property → give it a name (e.g. "TeacherCircle") →
+   Web data stream → enter your production URL.
+2. Copy the **Measurement ID** (starts `G-...`) from the data stream's details.
+3. Add `NEXT_PUBLIC_GA_MEASUREMENT_ID=G-...` to Vercel's Environment Variables,
+   redeploy. Traffic shows up in the GA4 dashboard within minutes (Realtime report is
+   the fastest way to confirm it's working — open the site in another tab and watch
+   yourself show up).
+
+**Google AdSense (real review, can take days to a few weeks):**
+1. [google.com/adsense](https://www.google.com/adsense) → sign in with your Google
+   account → Sign up → enter your production site URL → connect your site.
+2. AdSense needs a **Privacy Policy** disclosing use of cookies and personalized
+   advertising before it will approve a site — already built at `/privacy`
+   (`app/privacy/page.tsx`); nothing to add here unless you want to customize the wording.
+3. Google gives you a snippet (`<script ... data-ad-client="ca-pub-...">`) — you
+   don't need to paste this manually. Instead, take just the `ca-pub-XXXXXXXXXXXXXXXX`
+   value and set `NEXT_PUBLIC_ADSENSE_CLIENT_ID` in Vercel, then redeploy. The same
+   script `components/AdSense.tsx` adds is what Google's crawler uses to verify
+   ownership, so this one step covers both "add the code" and "verify the site."
+4. `app/ads.txt/route.ts` automatically publishes a correct `/ads.txt` once that env
+   var is set — verify it directly (`curl https://<your-app>/ads.txt`) shows
+   `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`. AdSense checks for
+   this specifically; a missing or wrong ads.txt is one of the most common reasons ad
+   revenue doesn't get attributed even after approval.
+5. Google reviews the live site against its [AdSense program
+   policies](https://support.google.com/adsense/answer/48182) — this takes real time
+   (anywhere from under a day to a few weeks) and can be rejected if the site doesn't
+   have enough original content or navigable structure yet. **Realistic expectation
+   for this specific site right now**: with a single real teacher listing, approval
+   may be rejected or delayed for "low value content" — growing real listings and
+   traffic first will make approval more likely, not just faster.
+6. Once approved, Auto Ads (Google's automatic ad placement, no manual ad-unit setup)
+   starts showing ads with zero further code changes — this is already what
+   `components/AdSense.tsx` enables. Toggle Auto Ads on/off or adjust ad density
+   later from the AdSense dashboard itself, not from this codebase.
+
+**What this doesn't include, on purpose**: no cookie-consent banner. Google's own
+EU User Consent Policy technically expects one for EEA/UK visitors using
+AdSense/Analytics; this app is India-focused per its own description and a full
+consent-management setup is a real feature, not a one-line addition — revisit if
+meaningful EU traffic ever shows up in Analytics.
+
 ### Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -184,3 +238,5 @@ locally once that flag flips.
 | App works, then goes slow/404s after a week of no traffic | Free Supabase project auto-paused | First request wakes it in 10-30s; set up the Step 7 keep-alive to avoid this going forward |
 | `PGRST202 ... Could not find the function` from an RPC that definitely exists in a migration | PostgREST's schema cache hasn't been reloaded since that migration was applied | Run `NOTIFY pgrst, 'reload schema';` again — see the callout in Step 2 |
 | Any real admin action, or any page whose RLS touches `is_admin()`, returns a 500 with no other explanation | You're on a copy of this database from before `0020_fix_is_admin_recursion.sql` was applied | Apply `0020` — `is_admin()` recurses into itself infinitely on Supabase's specific Postgres build otherwise (not reproducible on local Postgres 15.8); see `docs/04-test-report.md` §3i for the full story |
+| `/ads.txt` is empty or 404s | `NEXT_PUBLIC_ADSENSE_CLIENT_ID` isn't set in Vercel, or you haven't redeployed since setting it | `NEXT_PUBLIC_*` vars are inlined at build time — setting one in Vercel's dashboard requires a new deploy to take effect, not just a page refresh |
+| AdSense review comes back rejected | Usually "low value content" on a very new site, or the Privacy Policy link isn't easy to find | Grow real listings/content first and re-submit; confirm `/privacy` is reachable and linked from the footer (it is, by default) |

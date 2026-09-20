@@ -133,6 +133,19 @@ docker compose exec postgres psql -h 127.0.0.1 -U teachercircle -d postgres \
 
 Roll back the same way with `enabled = false`.
 
+### Google Analytics + AdSense (monetization)
+
+Both ship wired but inert — `components/GoogleAnalytics.tsx` and
+`components/AdSense.tsx` render nothing until `NEXT_PUBLIC_GA_MEASUREMENT_ID`
+and `NEXT_PUBLIC_ADSENSE_CLIENT_ID` are set. Getting real values for those
+requires creating a Google Analytics property and an AdSense account
+yourself (real sign-ups Claude Code can't do on your behalf, plus a genuine
+human review for AdSense) — full step-by-step walkthrough:
+[docs/03-deployment.md](docs/03-deployment.md) Step 9. A Privacy Policy
+(`/privacy`) already exists since AdSense requires one before approving a
+site. Not built: a cookie-consent banner (this app is India-focused; add one
+if meaningful EU/UK traffic ever shows up in Analytics).
+
 ## Scope decisions made while implementing (read this before assuming a bug)
 
 The two design documents described the architecture; turning it into running code

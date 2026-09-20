@@ -181,6 +181,7 @@ This is the honest current state, not the aspirational one:
 | Report + mutual block in messaging, admin moderation queue | Razorpay/Cashfree gateway (Phase 2b, only if manual approval becomes the bottleneck) |
 | Rate limiting (login/signup/messages/reviews/reports) | |
 | SEO: sitemap.xml, robots.txt, per-teacher metadata, schema.org JSON-LD | |
+| Google Analytics + Google AdSense, config-gated (absent, not broken, until `NEXT_PUBLIC_GA_MEASUREMENT_ID`/`NEXT_PUBLIC_ADSENSE_CLIENT_ID` are set — see `docs/03-deployment.md` Step 9; the account signup and AdSense site review are real steps only you can do, in your own Google account) | |
 | Lightweight teacher self-attestation ("self-declared, not a background check") | |
 | Response-time signal, computed from real message timestamps | |
 | Saved/favorite teachers | |
