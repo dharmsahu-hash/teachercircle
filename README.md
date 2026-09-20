@@ -146,12 +146,44 @@ human review for AdSense) — full step-by-step walkthrough:
 site. Not built: a cookie-consent banner (this app is India-focused; add one
 if meaningful EU/UK traffic ever shows up in Analytics).
 
+### Traffic growth: SEO landing pages, WhatsApp share, referrals (G1–G5)
+
+From [docs/07-growth-review-2026-09-20.md](docs/07-growth-review-2026-09-20.md):
+city + subject landing pages (`/tutors/[city]`, `/tutors/[city]/[subject]`,
+404-guarded against thin content), a `/tutors` browse hub, a WhatsApp share
+button on teacher profiles, Search Console verification support
+(`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`, same config-gated pattern as
+GA/AdSense above), and a referral loop (`/account` → "Invite a teacher",
+`db/migrations/0025_referrals.sql`). G6 (blog/content) stays open — it needs
+written content, not code. Full design: [docs/02-lld.md](docs/02-lld.md) §14.
+
 ## Scope decisions made while implementing (read this before assuming a bug)
 
 The two design documents described the architecture; turning it into running code
 surfaced real gaps and a couple of genuine bugs. Fixed, and listed here so you know
 they're deliberate:
 
+- **New: G1–G5 — traffic growth (SEO landing pages, WhatsApp share, browse
+  hub, Search Console support, referrals)**: `lib/directory.ts` derives real
+  city/subject slugs and pairs from `teacher_public` in application code
+  (small data volume, no need for a DB-level `DISTINCT`); `app/tutors/[city]`
+  and `app/tutors/[city]/[subject]` 404 rather than render for any slug
+  combination with zero real teachers, so Google never indexes an empty
+  shell. `users.referred_by` (`db/migrations/0025_referrals.sql`) uses
+  `on delete set null`, deliberately breaking from every other FK in this
+  schema (`on delete cascade`) — a referrer's deletion must never cascade
+  into deleting everyone they referred. Referral attribution survives the
+  signup email-confirmation redirect (no session yet to call a `security
+  definer` RPC) via a `tc_ref` `localStorage` key set at `/login?ref=...`
+  and consumed once role selection succeeds. **Non-bug test false-failure
+  found and fixed**: a Tier 2 check asserting the account page shows "1
+  teacher" failed even though the feature was already confirmed correct by
+  hand in the browser — React SSR inserts `<!-- -->` comment markers
+  between adjacent text/expression nodes, breaking a naive substring match;
+  fixed by stripping those markers before asserting. `components/TeacherCard.tsx`
+  was extracted from `app/search/page.tsx` during this work since a third
+  near-identical copy (search, city page, city+subject page) was about to
+  exist. See `docs/02-lld.md` §14.
 - **New: P3 — security headers, password strength, search pagination +
   filters, dark mode, saved teachers**: basic security headers
   (`next.config.mjs`, deliberately no CSP — see below), server-side password

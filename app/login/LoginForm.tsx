@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginForm() {
@@ -11,6 +11,20 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+
+  // G5 referral (docs/07-growth-review-2026-09-20.md): a ?ref=<inviterId>
+  // link lands here. Stashed in localStorage, not just read from the URL,
+  // because production requires email confirmation — the user leaves this
+  // page, clicks a link in their inbox, and lands back on a fresh page load
+  // (see RoleForm.tsx, where it's actually applied once they have a session).
+  useEffect(() => {
+    try {
+      const ref = new URLSearchParams(window.location.search).get("ref");
+      if (ref) localStorage.setItem("tc_ref", ref);
+    } catch {
+      // Private browsing / blocked storage — the referral is just missed, no worse than not existing.
+    }
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

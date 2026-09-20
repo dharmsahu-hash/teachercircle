@@ -696,6 +696,63 @@ async function runScenarios(backend) {
     const r = await makeClient().get("/api/favorites");
     check("16.7 GET favorites without a session -> 401", r.status === 401, `got ${r.status}`);
   }
+
+  // ---------- 17. G1/G2/G3: city/subject SEO landing pages + WhatsApp share ----------
+  {
+    const r = await teacherClient.get("/tutors");
+    check("17.1 GET /tutors hub page -> 200, lists a real city", r.status === 200 && String(r.body).includes("Bengaluru"), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/bengaluru");
+    check("17.2 GET /tutors/[city] for a real city -> 200, shows the real teacher", r.status === 200 && String(r.body).includes("Meera"), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/bengaluru/maths");
+    check("17.3 GET /tutors/[city]/[subject] for a real pair -> 200, shows the real teacher", r.status === 200 && String(r.body).includes("Meera"), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/nonexistent-city-xyz");
+    check("17.4 GET /tutors/[city] for a made-up city -> 404 (no thin page)", r.status === 404, `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/bengaluru/nonexistent-subject-xyz");
+    check("17.5 GET /tutors/[city]/[subject] for a real city + fake subject -> 404 (no thin page)", r.status === 404, `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get(`/teacher/${meeraId}`);
+    check("17.6 Teacher profile includes a WhatsApp share link", r.status === 200 && String(r.body).includes("wa.me"), `got ${r.status}`);
+  }
+
+  // ---------- 18. G5: referral tracking ----------
+  {
+    const inviter = makeClient();
+    await inviter.post("/api/auth/signup", { email: "referral-inviter@test.local", password: "pw123456" });
+    await inviter.post("/api/auth/role", { role: "parent" });
+    const inviterId = [...backend.db.users.values()].find((u) => u.email === "referral-inviter@test.local").id;
+
+    const invitee = makeClient();
+    await invitee.post("/api/auth/signup", { email: "referral-invitee@test.local", password: "pw123456" });
+    const r = await invitee.post("/api/auth/role", { role: "teacher", ref: inviterId });
+    check("18.1 Signing up via a referral link + choosing a role -> 200 (referral is best-effort, never blocks onboarding)", r.status === 200 && r.body?.ok, JSON.stringify(r.body));
+
+    const inviteeUser = [...backend.db.users.values()].find((u) => u.email === "referral-invitee@test.local");
+    check("18.2 The invitee's referred_by is set to the real inviter", inviteeUser?.referred_by === inviterId, JSON.stringify(inviteeUser));
+
+    const accountPage = await inviter.get("/account");
+    // React SSR splits adjacent text/expression nodes with <!-- --> comment
+    // markers, so the rendered count is literally "1<!-- --> teacher" in the
+    // raw HTML, not a plain "1 teacher" substring — strip those before checking.
+    const accountText = String(accountPage.body).replace(/<!--\s*-->/g, "");
+    check("18.3 The inviter's own /account page reflects the real referral count (1 teacher)", accountPage.status === 200 && accountText.includes("1 teacher"), `got ${accountPage.status}`);
+  }
+  {
+    const selfReferrer = makeClient();
+    await selfReferrer.post("/api/auth/signup", { email: "self-referrer@test.local", password: "pw123456" });
+    const ownId = [...backend.db.users.values()].find((u) => u.email === "self-referrer@test.local").id;
+    await selfReferrer.post("/api/auth/role", { role: "teacher", ref: ownId });
+    const user = [...backend.db.users.values()].find((u) => u.email === "self-referrer@test.local");
+    check("18.4 SECURITY: a self-referral is silently rejected, not recorded", user?.referred_by == null, JSON.stringify(user));
+  }
 }
 
 main();

@@ -1,14 +1,19 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { avatarPresets } from "@/lib/avatar";
+import { getAppBaseUrl } from "@/lib/url";
+import { pgRpc } from "@/lib/db";
 import Avatar from "@/components/Avatar";
 import AvatarPicker from "@/components/AvatarPicker";
+import InviteLink from "@/components/InviteLink";
 import ContactInfoForm from "./ContactInfoForm";
 import DeleteAccountButton from "./DeleteAccountButton";
 
 export default async function AccountPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+
+  const referralCount = await pgRpc("get_referral_count", {}, user.token).catch(() => 0);
 
   return (
     <div>
@@ -38,6 +43,15 @@ export default async function AccountPage() {
         selection below, $0 to run. Your choice overrides your Google photo if you have one.
       </p>
       <AvatarPicker presets={avatarPresets()} currentSeed={user.avatarSeed} />
+
+      <h2>Invite a teacher</h2>
+      <p className="hint">
+        Know a teacher who&apos;d list for free? Share your link — {referralCount} teacher
+        {referralCount === 1 ? "" : "s"} {referralCount === 1 ? "has" : "have"} joined
+        through it so far.
+      </p>
+      <InviteLink link={`${getAppBaseUrl()}/login?ref=${user.id}`} />
+
       <h2>Danger zone</h2>
       <p className="hint">
         Deletes your account (soft-delete): your profile is unlisted and your email is

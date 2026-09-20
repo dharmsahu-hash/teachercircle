@@ -18,13 +18,25 @@ export default function RoleForm() {
     setBusy(true);
     setError(null);
     try {
+      let ref: string | null = null;
+      try {
+        ref = localStorage.getItem("tc_ref");
+      } catch {
+        // Ignore — no referral to apply is a normal case, not an error.
+      }
       const res = await fetch("/api/auth/role", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
+        body: JSON.stringify({ role, ref }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      try {
+        localStorage.removeItem("tc_ref");
+      } catch {
+        // Not critical — worst case a stale ref is retried on a future
+        // signup, and set_referred_by() rejects it harmlessly once already set.
+      }
       router.replace(role === "teacher" ? "/teacher/profile" : "/search");
       router.refresh();
     } catch (err: any) {

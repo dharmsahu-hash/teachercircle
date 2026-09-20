@@ -189,6 +189,11 @@ This is the honest current state, not the aspirational one:
 | UPI QR billing flow end to end, flag-gated | |
 | Admin console: view/edit/delete any profile, audited | |
 | Self-service account deletion (soft-delete) | |
+| City + subject SEO landing pages (`/tutors/[city]`, `/tutors/[city]/[subject]`), thin-content-guarded (404 if no real teacher), in `sitemap.xml` (see `docs/07-growth-review-2026-09-20.md` G1) | |
+| `/tutors` browse hub — internal-linking scaffold to every city/subject landing page (G3) | |
+| WhatsApp share button on teacher profiles, UTM-tagged (G2) | |
+| Google Search Console verification support, config-gated on `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` (G4 — the Search Console signup/verification itself is a human step, see `docs/03-deployment.md`) | |
+| Referral loop: shareable invite link on `/account`, `referred_by` tracked via `SECURITY DEFINER` RPCs, referral count shown to the inviter (G5) | |
 
 See `README.md` in the repo root for the specific bugs found and fixed while
 building all of this — including two severe ones caught only by testing

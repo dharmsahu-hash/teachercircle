@@ -15,6 +15,12 @@ export const metadata: Metadata = {
   description,
   openGraph: { title: "TeacherCircle", description, type: "website" },
   twitter: { card: "summary", title: "TeacherCircle", description },
+  // Google Search Console's HTML-tag verification method — same
+  // "provisioned, not wired until configured" pattern as Analytics/AdSense.
+  // Absent from the page entirely (not an empty/invalid meta tag) until set.
+  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { verification: { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION } }
+    : {}),
 };
 
 // Runs before paint so a stored dark-mode choice doesn't flash light first.

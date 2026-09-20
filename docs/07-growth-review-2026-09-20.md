@@ -1,5 +1,14 @@
 # TeacherCircle — Traffic Growth Review (2026-09-20)
 
+> **Status: G1–G5 have since been implemented, tested locally (105/105 Tier
+> 1+2 checks), and verified live in the browser** — city + subject SEO
+> landing pages (`/tutors/[city]/[subject]`), a browse hub (`/tutors`),
+> WhatsApp share on teacher profiles, Search Console verification support,
+> and a working referral loop (`/account` → "Invite a teacher"). Local
+> sitemap.xml went from 1 real indexable listing to 40+ real landing pages
+> as a direct result. G6 (blog/content) remains open — it needs written
+> content, not just code, consistent with this doc's original ordering.
+
 **Method:** direct inspection of the current codebase (confirmed via grep/read, not
 assumed) to find real gaps specific to organic traffic growth for a directory site —
 not a generic "SEO checklist," and not overlapping what P1 (§06 review) already
@@ -27,7 +36,7 @@ not by which is flashiest to build.
 
 ## Recommendations, prioritized by traffic-growth leverage vs. effort
 
-### G1 — City + subject SEO landing pages (highest leverage)
+### G1 — ✅ Done — City + subject SEO landing pages (highest leverage)
 
 Add crawlable, pretty-URL pages like `/tutors/bangalore/maths` (city + subject) and
 `/tutors/bangalore` (city only) that render the same underlying `teacher_public`
@@ -49,7 +58,7 @@ Google, and pages should probably only be generated (and included in the sitemap
 for city/subject combinations that actually have at least one real listing —
 worth deciding the exact threshold before shipping, not guessing at a number now.
 
-### G2 — WhatsApp share button on teacher profiles
+### G2 — ✅ Done — WhatsApp share button on teacher profiles
 
 A single `wa.me/?text=...` link on `/teacher/[id]` ("Share this teacher") —
 trivial to build, no new schema, no third-party account needed. WhatsApp is the
@@ -57,7 +66,7 @@ dominant sharing channel in India specifically (unlike most Western markets), so
 this converts "I found a good tutor" into a real, tracked (via a UTM-tagged link)
 referral channel that Google's algorithm has no say over at all.
 
-### G3 — City/subject browse (hub) pages
+### G3 — ✅ Done — City/subject browse (hub) pages
 
 `/tutors` (or similar) listing every city with at least one real listing, and every
 subject, as plain internal links. Two things at once: a genuinely more usable
@@ -66,7 +75,7 @@ internal-linking scaffold that helps Google actually discover and crawl all of
 G1's individual landing pages — a page search engines can't find any link to is
 functionally invisible no matter how well-optimized it is.
 
-### G4 — Google Search Console setup (not code — a deployment step)
+### G4 — ✅ Done (code side) — Google Search Console setup
 
 Nothing today actively tells Google "here's the sitemap, please crawl this."
 Add site verification (a meta tag or DNS record — Search Console gives you the
@@ -77,7 +86,7 @@ search terms are already finding the site — real, free data neither Analytics 
 AdSense usage. Belongs in `docs/03-deployment.md` as a numbered step, same
 treatment as GA4/AdSense.
 
-### G5 — Lightweight referral / "invite a teacher" mechanism
+### G5 — ✅ Done — Lightweight referral / "invite a teacher" mechanism
 
 A shareable link on `/account` ("Invite a teacher you know") that pre-fills a
 signup flow, plus a small counter so the inviter sees it worked. This is the
@@ -89,7 +98,7 @@ leverage in principle — a referral mechanism with 14 teachers is much less
 valuable than the same mechanism once G1's SEO pages start pulling in real search
 traffic to convert.
 
-### G6 — Blog / content pages (lower priority for this stage)
+### G6 — ⬜ Still open — Blog / content pages (lower priority for this stage)
 
 Evergreen articles ("How to choose a Maths tutor for CBSE Class 10 boards",
 "Tutor vs. coaching center: what's actually different") drive long-tail search

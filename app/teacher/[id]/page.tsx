@@ -4,6 +4,7 @@ import { getAppBaseUrl } from "@/lib/url";
 import Avatar from "@/components/Avatar";
 import ConnectAndReview from "./ConnectAndReview";
 import FavoriteButton from "@/components/FavoriteButton";
+import WhatsAppShare from "@/components/WhatsAppShare";
 import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
 
@@ -149,11 +150,15 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
 
       {teacher.bio && <p style={{ marginTop: 16 }}>{teacher.bio}</p>}
 
-      {user && user.id !== teacher.user_id && (
-        <div style={{ marginTop: 12 }}>
+      <div className="row" style={{ marginTop: 12, gap: 10 }}>
+        <WhatsAppShare
+          url={`${getAppBaseUrl()}/teacher/${teacher.user_id}`}
+          text={`${teacher.name} teaches ${teacher.subjects?.join(", ") || "tuition"}${teacher.city ? ` in ${teacher.city}` : ""} — found them on TeacherCircle:`}
+        />
+        {user && user.id !== teacher.user_id && (
           <FavoriteButton teacherId={teacher.user_id} initiallySaved={isFavorited} />
-        </div>
-      )}
+        )}
+      </div>
 
       <ConnectAndReview
         teacherId={teacher.user_id}

@@ -231,7 +231,7 @@ export function createFakeBackend() {
       const id = crypto.randomUUID();
       db.gotruePasswords.set(email, password);
       // Mirrors the real handle_new_user trigger: role starts NULL.
-      db.users.set(id, { id, email, role: null, auth_provider: "password", deleted_at: null, created_at: new Date().toISOString() });
+      db.users.set(id, { id, email, role: null, auth_provider: "password", deleted_at: null, created_at: new Date().toISOString(), referred_by: null });
       const access_token = mintJwt(id, email);
       return json(res, 200, { access_token, refresh_token: "fake-refresh", expires_in: 3600, user: { id, email } });
     }
@@ -654,6 +654,21 @@ export function createFakeBackend() {
           if (user.role !== null) return error(res, 400, "role already assigned");
           user.role = args.new_role;
           return json(res, 200, undefined);
+        }
+
+        if (fn === "set_referred_by") {
+          if (!requester) return error(res, 401, "not signed in");
+          if (args.p_referred_by === requester.id) return error(res, 400, "cannot refer yourself");
+          if (!db.users.has(args.p_referred_by)) return error(res, 400, "referrer not found");
+          const user = db.users.get(requester.id);
+          if (user.referred_by == null) user.referred_by = args.p_referred_by;
+          return json(res, 200, undefined);
+        }
+
+        if (fn === "get_referral_count") {
+          if (!requester) return error(res, 401, "not signed in");
+          const count = [...db.users.values()].filter((u) => u.referred_by === requester.id && u.role === "teacher").length;
+          return json(res, 200, count);
         }
 
         if (fn === "is_payments_enabled") return json(res, 200, db.feature_flags.payments_enabled);

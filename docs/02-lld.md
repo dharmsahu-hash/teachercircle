@@ -285,3 +285,70 @@ disclosing cookie/ad-personalization use before they'll approve a site — see
 `docs/03-deployment.md` Step 9 for the full account-setup walkthrough, which
 has to be done by a human in their own Google account regardless of what's
 built here.
+
+## 14. Traffic growth: SEO landing pages, WhatsApp share, referrals
+
+Built from `docs/07-growth-review-2026-09-20.md` (G1–G5); G6 (blog/content)
+is deliberately not built here — it needs written content, not code.
+
+**Directory core** (`lib/directory.ts`): `getDirectory()` fetches every
+`teacher_public` row once and derives, in application code (not a DB
+`DISTINCT`/`unnest` — the data volume doesn't justify it), the distinct set
+of city slugs, subject slugs, and real city+subject pairs. `slugify()` is a
+plain lowercase/hyphenate/strip-punctuation function, unit-tested directly
+(`tests/unit/directory.test.ts`) rather than only through the pages that use
+it. `getCityPage()`/`getCitySubjectPage()` build on top of it and are the
+single source of truth both the pages and `app/sitemap.ts` call — so a
+slug that isn't real never ends up in the sitemap by construction, not by a
+separate filter that could drift from the page logic.
+
+**G1 — SEO landing pages** (`app/tutors/[city]/page.tsx`,
+`app/tutors/[city]/[subject]/page.tsx`): each calls `notFound()` when the
+slug doesn't match a real listing — the thin-content guard from the review's
+"honest caveat," so Google never indexes an empty shell for a made-up
+city/subject combination. Each has its own `generateMetadata` (unique
+title/description built from the real teacher count and city/subject name)
+and a schema.org `ItemList` JSON-LD block, matching the per-teacher JSON-LD
+pattern from §11.
+
+**G2 — WhatsApp share** (`components/WhatsAppShare.tsx`): a `wa.me/?text=`
+link, no new schema, no third-party account. The share URL carries
+`utm_source=whatsapp&utm_medium=share` so referral traffic is attributable
+in Analytics rather than showing up as generic direct traffic.
+
+**G3 — Browse hub** (`app/tutors/page.tsx`): lists every real city and
+subject from `getDirectory()` as plain links — both a real navigation
+surface and the internal-linking scaffold Google needs to actually discover
+G1's individual pages (a page with no inbound link is effectively invisible
+to a crawler regardless of its own on-page SEO).
+
+**G4 — Search Console verification** (`app/layout.tsx`): the Metadata API's
+built-in `verification: { google: ... }` field, spread in only when
+`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` is set — same config-gated,
+no-op-until-configured pattern as GA/AdSense in §13. The Search Console
+signup and sitemap submission themselves are human steps in
+`docs/03-deployment.md`, not code.
+
+**G5 — Referral loop** (`db/migrations/0025_referrals.sql`): adds
+`users.referred_by uuid references users(id) on delete set null` —
+deliberately `set null`, not `cascade` like every other FK in this schema,
+because deleting a referrer must never cascade-delete everyone they
+referred. Two `SECURITY DEFINER` functions, matching the narrow-grant
+pattern already used for `reveal_teacher_contact()`/`is_admin()`:
+`set_referred_by(uuid)` (rejects self-referral and unknown referrer IDs,
+only ever sets `referred_by` once — a later call is a silent no-op, not an
+overwrite) and `get_referral_count()` (returns a single count, not rows, to
+the inviter). `/account` shows a real invite link
+(`/login?ref={user.id}`) via `components/InviteLink.tsx` and the live count
+from `get_referral_count()`.
+
+Because signup requires an email-confirmation redirect with no session yet
+to authenticate a `SECURITY DEFINER` call, the referral code survives that
+detour via `localStorage` (`tc_ref`, set on `/login?ref=...` load, read and
+cleared by `app/onboarding/role/RoleForm.tsx` once role selection succeeds)
+rather than trying to thread it through the confirmation link itself.
+
+**`app/search/page.tsx`** had its inline teacher-card markup extracted to
+`components/TeacherCard.tsx` while building this — it was about to be
+duplicated a third time (search, city page, city+subject page), and this
+repo's existing pattern is to share, not fork, that kind of markup.
