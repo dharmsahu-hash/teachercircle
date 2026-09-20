@@ -1,13 +1,16 @@
 # TeacherCircle — Traffic Growth Review (2026-09-20)
 
-> **Status: G1–G5 have since been implemented, tested locally (105/105 Tier
-> 1+2 checks), and verified live in the browser** — city + subject SEO
-> landing pages (`/tutors/[city]/[subject]`), a browse hub (`/tutors`),
-> WhatsApp share on teacher profiles, Search Console verification support,
-> and a working referral loop (`/account` → "Invite a teacher"). Local
-> sitemap.xml went from 1 real indexable listing to 40+ real landing pages
-> as a direct result. G6 (blog/content) remains open — it needs written
-> content, not just code, consistent with this doc's original ordering.
+> **Status: G1–G5 are fully shipped** — implemented, tested locally (105/105
+> Tier 1+2 checks), verified live on production, migration `0025_referrals.sql`
+> applied to production Supabase, and pushed. City + subject SEO landing
+> pages (`/tutors/[city]/[subject]`), a browse hub (`/tutors`), WhatsApp
+> share on teacher profiles, a working referral loop (`/account` → "Invite a
+> teacher"), and Search Console — `teachercircle.vercel.app` is verified and
+> `sitemap.xml` submitted. Production's sitemap grew from 6 to 12 real URLs
+> (1 real teacher listing today; local seed/demo data made the earlier "40+"
+> figure larger than what's on production right now). G6 (blog/content)
+> remains open — it needs written content, not just code, consistent with
+> this doc's original ordering.
 
 **Method:** direct inspection of the current codebase (confirmed via grep/read, not
 assumed) to find real gaps specific to organic traffic growth for a directory site —
@@ -75,7 +78,7 @@ internal-linking scaffold that helps Google actually discover and crawl all of
 G1's individual landing pages — a page search engines can't find any link to is
 functionally invisible no matter how well-optimized it is.
 
-### G4 — ✅ Done (code side) — Google Search Console setup
+### G4 — ✅ Done — Google Search Console setup
 
 Nothing today actively tells Google "here's the sitemap, please crawl this."
 Add site verification (a meta tag or DNS record — Search Console gives you the
@@ -85,6 +88,13 @@ only way to actually *see* what's ranking, what's getting impressions, and what
 search terms are already finding the site — real, free data neither Analytics nor
 AdSense usage. Belongs in `docs/03-deployment.md` as a numbered step, same
 treatment as GA4/AdSense.
+
+`teachercircle.vercel.app` is verified in Search Console (HTML tag method,
+`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` set in Vercel) and `sitemap.xml` has
+been submitted — confirmed by inspecting the live `<meta
+name="google-site-verification">` tag on production before the user clicked
+Verify. Indexing/impressions data itself takes days to populate in Search
+Console; nothing further to build here.
 
 ### G5 — ✅ Done — Lightweight referral / "invite a teacher" mechanism
 

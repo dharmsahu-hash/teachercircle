@@ -151,9 +151,9 @@ if meaningful EU/UK traffic ever shows up in Analytics).
 From [docs/07-growth-review-2026-09-20.md](docs/07-growth-review-2026-09-20.md):
 city + subject landing pages (`/tutors/[city]`, `/tutors/[city]/[subject]`,
 404-guarded against thin content), a `/tutors` browse hub, a WhatsApp share
-button on teacher profiles, Search Console verification support
-(`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`, same config-gated pattern as
-GA/AdSense above), and a referral loop (`/account` → "Invite a teacher",
+button on teacher profiles, verified Google Search Console with `sitemap.xml`
+submitted (`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`, same config-gated pattern
+as GA/AdSense above), and a referral loop (`/account` → "Invite a teacher",
 `db/migrations/0025_referrals.sql`). G6 (blog/content) stays open — it needs
 written content, not code. Full design: [docs/02-lld.md](docs/02-lld.md) §14.
 
