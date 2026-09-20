@@ -2,33 +2,38 @@
 
 Full implementation of the design in the companion requirements/HLD/LLD/implementation
 documents: Next.js app + PostgREST + GoTrue (Google & email/password auth) + Postgres
-(RLS everywhere) + Meilisearch/Redis/MinIO containers, all open source, $0 to run.
+(RLS everywhere), all open source. Local dev also runs Meilisearch/Redis/MinIO
+containers (reserved, not wired into the app — see `docs/01-system-design.md` §8);
+**production runs on Vercel + Supabase Cloud instead** (Postgres+GoTrue+PostgREST,
+managed) — see `docs/03-deployment.md` Part B. $0 either way, no credit card.
 
 **Full docs, kept in this repo (not just chat):**
 [System design / HLD](docs/01-system-design.md) ·
 [Low-level design](docs/02-lld.md) ·
 [Deployment — local & free production](docs/03-deployment.md) ·
 [Test report](docs/04-test-report.md) ·
-[Architecture review & naming](docs/05-architecture-review.md)
+[Architecture review & naming](docs/05-architecture-review.md) ·
+[Security/feature/competitive review — P0–P3, now shipped](docs/06-review-2026-09-20.md)
 
 This file covers local dev specifics and the scope decisions/bugs found while
 building it; the docs above cover architecture, data model, and the full
-production rollout on a free-tier VM.
+production deployment.
 
-## ✅ Fully verified, including the real Docker stack
+## ✅ Fully verified, including the real Docker stack and live production
 
-Docker Desktop is now installed (with your approval) and the full stack has been run
-for real: migrations applying cleanly against real Postgres, real GoTrue issuing real
-sessions, and the complete signup → role → profile → search → connect → review →
-billing → admin loop — **106/106 automated checks passing**, 31 of them against the
-live containers, not a mock. Full detail, including 7 real deployment bugs found and
-fixed along the way (a stale PostgREST schema cache, a missing GoTrue connection role,
-an image that no longer pulls without login, and more): [docs/04-test-report.md](docs/04-test-report.md).
+Docker Desktop is installed and the full stack has been run for real: migrations
+applying cleanly against real Postgres, real GoTrue issuing real sessions, and the
+complete signup → role → profile → search → connect → message (report/block) →
+review → billing → admin loop — **209/209 automated checks passing**, 35 of them
+against the live containers, not a mock. Every feature below has also been verified
+live on production (`teachercircle.vercel.app`) against the real Supabase database,
+not just locally. Full detail, including real deployment and production bugs found
+and fixed along the way: [docs/04-test-report.md](docs/04-test-report.md).
 
 ```bash
 npm install        # clean install, 0 errors (one accepted transitive advisory — see below)
 npx tsc --noEmit    # 0 type errors across the whole app
-npm run build       # ✓ compiled, all 24 routes correctly server-rendered on demand
+npm run build       # ✓ compiled, all 50 routes correctly server-rendered on demand
 ```
 
 ## Run it

@@ -4,6 +4,11 @@
 > competitive findings as of the Vercel+Supabase production launch and in-app
 > messaging. This doc predates both and is kept for the parts still accurate
 > (Part B naming discussion, and architecture findings not touched since).
+>
+> **Status update, 2026-09-20**: three of this doc's own findings have since
+> been resolved as part of the P0–P3 work tracked in `docs/06-review-2026-09-20.md`
+> — #2 (rate limiting), #4 (security headers), and #9 (search pagination), all
+> marked ✅ below. Everything else in §A.1–§A.7 is unchanged and still open.
 
 **Date:** 2026-09-19
 **Basis:** direct review of the actual codebase (not the design docs describing it),
@@ -42,9 +47,9 @@ over them. The findings below are about closing the gap between "solid MVP" and
 | # | Finding | Severity | Where | Recommendation |
 |---|---|---|---|---|
 | 1 | **Raw database error text leaks to API clients.** Every route's catch block returns `err.message` verbatim, and for a `PostgrestError` that's the literal Postgres/PostgREST error body — e.g. `{"code":"P0001","message":"not connected"}` is fine to show, but a real constraint violation would expose column/constraint names to any client. | **High** | `lib/db.ts` `PostgrestError`; ~15 route handlers | Add a `lib/errors.ts` with an explicit allowlist: business-rule messages raised deliberately by our own functions (`"role already assigned"`, `"not connected"`, `"not authorized"`, `"a user with this email already exists"`) pass through; anything else becomes a generic `"Something went wrong"` logged server-side with the real detail. |
-| 2 | **No rate limiting on `/api/auth/signup` or `/api/auth/login`.** Brute-force and signup-spam are both open. | **High** (before any public launch) | `app/api/auth/{signup,login}/route.ts` | Redis is already provisioned and unused (see A.4) — a natural fit for a token-bucket limiter keyed by IP. Production docs already note Cloudflare rate limiting as a mitigation, but that only covers deployments actually behind Cloudflare. |
+| 2 | ✅ **Done, 2026-09-20** — was: no rate limiting on `/api/auth/signup` or `/api/auth/login`. | **High** (before any public launch) | `app/api/auth/{signup,login}/route.ts` | Shipped as a Postgres-backed fixed-window limiter (`0021_rate_limiting.sql`), not Redis-backed as this row originally suggested — Redis stayed unused, adding a dependency on it for one feature wasn't worth it. Covers login/signup/messages/reviews/reports, not just auth. See `docs/04-test-report.md` §3j. |
 | 3 | `GOTRUE_MAILER_AUTOCONFIRM=true` means anyone can activate an account with an email they don't own. | **High**, already self-documented | `docker-compose.yml` | Already flagged with a loud comment as a pre-launch item — reiterating here because it's the kind of thing that's easy to forget once the app "just works." Flip to `false` + configure `GOTRUE_SMTP_*` before real users. |
-| 4 | No CSP, `X-Content-Type-Options`, `X-Frame-Options`, or `Referrer-Policy` headers. | Medium | (none set anywhere) | Add via `next.config.mjs` `headers()` — cheap, no behavior change. |
+| 4 | ✅ **Done, 2026-09-20** — was: no CSP, `X-Content-Type-Options`, `X-Frame-Options`, or `Referrer-Policy` headers. | Medium | (none set anywhere) | Added via `next.config.mjs` `headers()`: `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS. Still deliberately no CSP — this app's inline JSON-LD (teacher pages) and Next's own inline bootstrap scripts would need per-request nonces to do that safely, a bigger change than "basic headers." |
 | 5 | No schema-validation library — routes hand-roll checks like `if (!rating)`, which is exactly what let the "rating `0` reported as missing" cosmetic bug through (documented in `docs/04-test-report.md`). | Medium | Every route handler | Adopt `zod` for request body parsing. Would have caught that bug for free and makes validation consistent instead of ad hoc. |
 | 6 | JWT sessions can't be revoked server-side; a captured token remains valid until its 1-hour expiry even after self-delete. | Medium, already self-documented | `lib/session.ts` | Acceptable for now; a real "sign out everywhere" needs a token blacklist or shorter-lived tokens + refresh rotation. Worth doing before payments go live for real. |
 | 7 | CSRF: no explicit token, but every mutation is POST and cookies are `SameSite=Lax` — a reasonable baseline, not a gap that needs closing right now. | Low (informational) | `lib/session.ts` | No action needed unless this API is ever called cross-origin. |
@@ -54,7 +59,7 @@ over them. The findings below are about closing the gap between "solid MVP" and
 | # | Finding | Severity | Recommendation |
 |---|---|---|---|
 | 8 | **No response envelope consistency.** Some routes return raw rows, some `{ok:true}`, some `{error:...}` — three different shapes across the same API surface. | Medium | Standardize on `{ data } \| { error: { message, code } }` before the API surface grows further; retrofitting later means touching every client call site. |
-| 9 | **`/api/search` has no pagination.** Returns every matching row, unbounded. Fine at 14 seed teachers; a real problem at thousands. | Medium | PostgREST already supports `Range`/`limit`/`offset` for free — just not used yet. Add `limit`/`offset` query params now, before it's a performance incident. |
+| 9 | ✅ **Done, 2026-09-20** — was: `/api/search` has no pagination. | Medium | PostgREST's native `limit`/`offset`, one extra row fetched per page to know whether a next page exists rather than a separate exact-count query. Also gained `minPrice`/`maxPrice`/`minRating` filters in the same pass. |
 | 10 | Business-rule rejections (e.g. "role already assigned") and malformed-request rejections (missing field) both return 400, conflating two different failure classes. | Low | Consider 409/422 for business-rule rejections if API consumers beyond this app's own frontend ever need to distinguish them programmatically. |
 
 ### A.3 Observability & operations
@@ -103,14 +108,17 @@ is well beyond what most projects this size have. Two real gaps:
 
 | Priority | Items |
 |---|---|
-| **P0 — before any real users** | #1 error sanitization, #2 rate limiting, #3 disable mailer autoconfirm + real SMTP, #4 security headers |
-| **P1 — soon** | #11 CI pipeline, #5 zod validation, #9 search pagination, #8 response envelope, #12 structured logging |
-| **P2 — scale-triggered** | #15 wire-or-remove Redis/Meilisearch, #16 materialized ratings, #17 the one missing index, Playwright E2E, ADRs, #6 JWT revocation |
+| **P0 — before any real users** | #1 error sanitization (still open), ~~#2 rate limiting~~ ✅, #3 disable mailer autoconfirm + real SMTP (still open), ~~#4 security headers~~ ✅ |
+| **P1 — soon** | #11 CI pipeline (still open), #5 zod validation (still open), ~~#9 search pagination~~ ✅, #8 response envelope (still open), #12 structured logging (still open) |
+| **P2 — scale-triggered** | #15 wire-or-remove Redis/Meilisearch, #16 materialized ratings, #17 the one missing index, Playwright E2E, ADRs, #6 JWT revocation — none of these touched by the P0–P3 pass; still open |
 
-None of these were implemented in this pass — they're recommendations for you to
-prioritize, not applied changes. Say which ones you want done and I'll implement them
-the same way everything else in this repo was built: with real tests against the
-real stack, not just code that looks right.
+None of these were implemented in *this* pass — they were recommendations at
+the time this doc was written. Three (#2, #4, #9, struck through above) were
+since implemented as part of the P0–P3 work in `docs/06-review-2026-09-20.md`;
+everything else here remains an open recommendation, not an applied change.
+Say which ones you want done next and they'll be implemented the same way
+everything else in this repo was built: with real tests against the real
+stack, not just code that looks right.
 
 ---
 

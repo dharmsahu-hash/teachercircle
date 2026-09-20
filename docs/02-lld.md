@@ -4,25 +4,40 @@ Reflects the actual code in this repo (`db/migrations/`, `app/`, `lib/`) — not
 aspirational spec. Where a design decision changed while building it, that's called
 out explicitly rather than left to drift silently from the docs.
 
+> **Updated 2026-09-20** — sections 9–12 are new (messaging trust & safety,
+> rate limiting, verification/response-time, favorites), covering
+> `db/migrations/0015` through `0024`. Everything before that was already
+> accurate and is unchanged below except where a table gained columns.
+
 ## 1. Data model
 
 | Table | Key columns | Notes |
 |---|---|---|
 | `users` | `id, email, role, auth_provider, deleted_at` | `role` is nullable until onboarding; mirrors `auth.users` via a trigger (§2) |
-| `teacher_profile` | `user_id (PK), subjects[], city, rate_per_hour, contact_email, contact_phone, is_listed, is_subscribed, deleted_at` | `contact_*` only ever returned via `reveal_teacher_contact()` (§4), never a plain `SELECT` |
+| `teacher_profile` | `user_id (PK), subjects[], city, rate_per_hour, contact_email, contact_phone, is_listed, is_subscribed, deleted_at, self_attested_at` | `contact_*` only ever returned via `reveal_teacher_contact()` (§4), never a plain `SELECT`. `self_attested_at` added in `0022` — see §11 |
 | `parent_profile` | `user_id (PK), name, deleted_at` | Had **no RLS policy at all** in the first draft — fixed in `0005` |
 | `student_profile` | `id, parent_id, name, grade, deleted_at` | Owned entirely by the parent |
 | `review` | `teacher_id, reviewer_id, rating, comment` | Insert blocked unless a `contact_request` row already links reviewer→teacher |
 | `contact_request` | `teacher_id, requester_id, created_at` | The audit trail "connect" leaves behind |
+| `conversation` | `id, teacher_id, requester_id` | One row per teacher/requester pair, `on delete cascade` from both `teacher_profile` and `users` — see §9 |
+| `message` | `id, conversation_id, sender_id, body, created_at, read_at` | `read_at` set by `mark_conversation_read()` when the recipient opens the thread |
+| `blocked_user` | `blocker_id, blocked_id (composite PK)` | See §9 — enforcement lives in a `SECURITY DEFINER` function, not a raw RLS subquery |
+| `message_report` | `id, conversation_id, reporter_id, reason, resolved_at` | Reviewed at `/admin/reports` |
+| `favorite_teacher` | `user_id, teacher_id (composite PK)` | Any signed-in user can save any teacher — see §12 |
+| `rate_limit_hit` | `rl_key (PK), window_start, count` | One row per (endpoint, actor) pair, reset each window — see §10 |
 | `feature_flags` | `key, enabled` | One row: `payments_enabled` |
 | `plan_limits` | `role, free_connections_per_month, yearly_price_amount, yearly_price_currency` | Per-role pricing/quota, not hardcoded |
 | `subscription` | `user_id, status, started_at, expires_at` | Yearly only, no auto-renew (personal UPI can't push a recurring charge) |
 | `payment_transaction` | `subscription_id, provider, amount, provider_ref, status, verified_by` | `verified_by` is null until an admin approves |
 | `admin_audit_log` | `actor_id, target_table, target_id, action` | Written only by the `admin_*` functions, never directly |
-| `teacher_public` (view) | aggregates `avg_rating`/`review_count` | What `/api/search` actually queries — see §7 |
+| `teacher_public` (view) | aggregates `avg_rating`/`review_count`, plus `self_attested_at`, `avg_response_hours`, `replied_conversation_count` | What `/api/search` actually queries — see §7, §11 |
+| `teacher_response_time` (view) | `teacher_id, avg_response_hours, replied_conversation_count` | Feeds `teacher_public` — see §11 |
+| `conversation_thread` (view) | per-conversation display row: partner name/avatar, `has_unread`, `is_blocked`, `blocked_by_me` | What `/messages` and `/messages/[id]` actually query — see §9 |
 
-Full column definitions: `db/migrations/0001_core_schema.sql` and
-`0003_billing_schema.sql`.
+Full column definitions: `db/migrations/0001_core_schema.sql`,
+`0003_billing_schema.sql`, `0015_messages.sql`, `0018_block_report.sql`,
+`0021_rate_limiting.sql`, `0022_verification_and_response_time.sql`,
+`0024_favorites.sql`.
 
 ## 2. Auth plumbing (the part a generic design doc always skips)
 
@@ -87,18 +102,26 @@ there's a concrete reason to build it.
 
 | Route | What it does |
 |---|---|
-| `POST /api/auth/signup`, `/login` | Server-to-server call to GoTrue's password grant; sets an httpOnly session cookie |
+| `POST /api/auth/signup`, `/login` | Server-to-server call to GoTrue's password grant; sets an httpOnly session cookie. Both rate-limited by IP (§10); signup also enforces server-side password strength (`lib/password.ts`) |
 | `GET /auth/callback` (page) + `POST /api/auth/set-session` | Picks up the Google OAuth token from the URL fragment and stores it the same way |
 | `POST /api/auth/role` | Calls `set_my_role()` |
-| `GET/POST /api/teacher/profile` | Own-profile read/create/update |
-| `GET /api/search` | Queries the `teacher_public` view |
+| `GET/POST /api/teacher/profile` | Own-profile read/create/update, including the `self_attested` toggle (§11) |
+| `GET /api/search` | Queries the `teacher_public` view; supports `subject`, `city`, `minPrice`, `maxPrice`, `minRating`, and `page` (§7, §11) |
 | `POST /api/connect/[teacherId]` | Entitlement check → `contact_request` insert → `reveal_teacher_contact()` |
-| `POST /api/reviews` | Insert, blocked by RLS unless connected |
+| `POST /api/reviews` | Insert, blocked by RLS unless connected; rate-limited (§10) |
+| `POST /api/conversations` | Creates (or returns the existing) `conversation` row for a connected pair |
+| `GET/POST /api/conversations/[id]/messages` | Read a thread (marks it read as a side effect) / send a message — rejected by RLS if either party has blocked the other; rate-limited (§10) |
+| `GET /api/conversations` | Lists the caller's own threads via `conversation_thread` |
+| `POST /api/conversations/[id]/report` | Inserts a `message_report`; rate-limited (§10) |
+| `POST /api/blocks`, `DELETE /api/blocks/[userId]` | Block / unblock another user (§9) |
+| `GET /api/admin/reports`, `POST /api/admin/reports/[id]/resolve` | Admin-only report queue (§9) |
+| `GET/POST /api/favorites`, `DELETE /api/favorites/[teacherId]` | Save/list/unsave a teacher (§12) |
 | `POST /api/billing/subscribe` | Creates `subscription`+`payment_transaction`, returns a UPI deep link + QR (`lib/upi.ts`) |
 | `POST /api/billing/submit-reference` | Records the payer's UTR, status → `submitted` |
 | `POST /api/admin/payments/[id]/approve` | Calls `approve_payment()` |
 | `POST /api/admin/users/[id]/{update,delete,restore,create-teacher}` | Calls the matching `admin_*` function |
 | `POST /api/account/delete` | Calls `set_my_deleted()` — self-service soft-delete |
+| `GET /sitemap.xml`, `/robots.txt` | Next.js-native routes (`app/sitemap.ts`, `app/robots.ts`) — see §11 |
 
 ## 7. Deliberately simplified for this first working version
 
@@ -130,3 +153,112 @@ there's a concrete reason to build it.
    `subscription`/`payment_transaction` rows — `is_admin()` would have been
    true but every row still hidden. Added `subscription_admin_read`/
    `txn_admin_read`.
+6. **`is_admin()` recursed into itself infinitely on real (Supabase) Postgres.**
+   It was `language sql stable`, not `security definer`, so its own internal
+   `select ... from users` query was itself subject to `users`'s
+   `users_admin_read using (is_admin())` policy — calling back into itself.
+   Present since `0005`, invisible to every tier of local testing (not
+   reproducible on local Postgres 15.8 — a genuine planner difference), only
+   found by testing directly against the real production database. Fixed with
+   `security definer` in `0020_fix_is_admin_recursion.sql`. Full account:
+   `docs/04-test-report.md` §3i.
+7. `admin_restore_profile()` cleared `deleted_at` but never re-set
+   `teacher_profile.is_listed` back to `true`, even though
+   `admin_soft_delete_profile()` explicitly sets it `false` as part of the
+   delete — a restored profile stayed permanently invisible in search. Fixed
+   in `0023_fix_admin_restore_relisting.sql`.
+8. The first version of the block-enforcement RLS policies used an inline
+   `exists (select ... from blocked_user ...)` subquery, which — unlike a
+   view — runs under the *querying* user's own RLS privileges, not the
+   table's. Since `blocked_user`'s own read policy only lets the blocker see
+   their own rows, the *blocked* party's session always saw "not blocked" and
+   could still send messages after being blocked. Fixed by moving the check
+   into `are_users_blocked() security definer` (§9).
+
+## 9. Messaging trust & safety (report + mutual block)
+
+`db/migrations/0015_messages.sql` adds `conversation`/`message`; `0018` adds
+report + block on top. Key decisions:
+
+- **Blocking is mutual, not one-directional.** Either party blocking the
+  other silences the whole conversation for both — simpler to reason about
+  than "the blocked person can still send, the blocker just stops seeing it."
+- **`are_users_blocked(a, b) security definer`** is the single source of
+  truth for block state, used by both `conversation_insert_if_connected` and
+  `message_insert_if_participant`'s `with check`, and by
+  `conversation_thread`'s `is_blocked` column. See bug #8 above for why this
+  has to be a function, not an inline subquery.
+- **`conversation_thread.blocked_by_me`** (added in `0019`) exists purely so
+  the UI can show an "Unblock" button only to the person who can actually act
+  on it — `blocked_user_own_delete` only allows the blocker to remove their
+  own block row, so showing the button to the blocked party would silently
+  do nothing if clicked.
+- **Report queue**: `message_report` rows are visible to the reporter and to
+  admins only (`message_report_read`); `/admin/reports` resolves them via
+  `message_report_admin_update`, gated by `is_admin()`.
+- **Notifications**: every new message triggers a best-effort email via
+  Brevo's HTTP API (`lib/email.ts`) to the other participant — a failure
+  here must never block the send itself, so it's wrapped and swallowed.
+
+## 10. Rate limiting
+
+`db/migrations/0021_rate_limiting.sql` — a Postgres-backed fixed-window
+counter, not Redis (Redis is provisioned but unused everywhere in this app;
+adding a dependency on it for one feature wasn't worth it). One row per
+(endpoint, actor) pair in `rate_limit_hit`, reset each window.
+`check_rate_limit(key, max, window_seconds)` is `security definer` so it
+works for both `anon` (login/signup, keyed by IP via `x-forwarded-for`) and
+`authenticated` (messages/reviews/reports, keyed by user id) callers.
+Deliberate, documented simplification: the brand-new-key branch has a small
+race window under true concurrency — acceptable for blunting casual abuse,
+not a hardened limiter. Limits: login 10/5min/IP, signup 5/hour/IP, messages
+30/10min/user, reviews 10/hour/user, reports 5/hour/user.
+
+Security headers (`next.config.mjs`) and server-side password strength
+(`lib/password.ts`) shipped alongside this, unrelated to rate limiting
+mechanically but from the same review pass. No CSP — this app relies on
+inline `<script type="application/ld+json">` (teacher pages, §11) and
+Next.js's own inline bootstrap scripts; a real CSP needs per-request nonces,
+which is a bigger change than "basic headers."
+
+## 11. Verification, response time, and SEO
+
+**Self-attestation** (`teacher_profile.self_attested_at`, `0022`): a
+teacher-side checkbox, explicitly labeled as a self-declaration, not a
+background or identity check. Toggling it on sets the timestamp; re-saving
+the profile with the box still checked does not bump it forward — it should
+read as "when they first confirmed," not "when they last edited anything."
+
+**Response time** (`teacher_response_time` view, `0022`): for each
+conversation, the gap between a requester's first message and the teacher's
+first reply after it, averaged across conversations that got a reply.
+Computed as a plain (non-`security definer`) view — safe for the same reason
+`teacher_public`/`conversation_thread` already are: a view runs with its
+*owner's* privileges, not the querying user's, so it can aggregate across
+every user's `conversation`/`message` rows despite those tables' own RLS
+restricting direct `SELECT` to participants and admins. `lib/responseTime.ts`
+turns the raw number into a low-precision label ("usually replies within a
+day"), never shown below 3 replied conversations — one lucky/unlucky reply
+shouldn't read as a stable pattern.
+
+**SEO** (`app/sitemap.ts`, `app/robots.ts`, `generateMetadata` on
+`app/teacher/[id]/page.tsx` and `app/search/page.tsx`): the sitemap lists
+every currently-listed teacher plus static routes; each teacher page gets a
+real `<title>`/description built from their actual data, a canonical URL,
+Open Graph/Twitter tags, and schema.org `Person` + `AggregateRating` JSON-LD
+(only when they have real reviews).
+
+**Search filters + pagination** (`app/api/search/route.ts`,
+`app/search/page.tsx`): `minPrice`/`maxPrice` (`rate_per_hour` gte/lte) and
+`minRating` (`avg_rating` gte); pagination via PostgREST's native
+`limit`/`offset`, fetching one extra row per page to know whether a next
+page exists rather than a separate exact-count query.
+
+## 12. Saved/favorite teachers
+
+`favorite_teacher` (`0024`) — any signed-in user can save a teacher and see
+the list at `/favorites`. `teacher_public` is a view, not a table PostgREST
+can embed a foreign key through, so the favorites list is two queries: the
+user's own `favorite_teacher` rows, then
+`teacher_public?user_id=in.(...)` — same pattern already used for
+`/admin/reports`'s participant lookups.

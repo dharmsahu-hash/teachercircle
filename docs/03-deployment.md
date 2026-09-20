@@ -10,10 +10,10 @@ for a real public URL). Both are $0.
 ### Prerequisite: Docker Desktop
 
 Installed and verified on this machine — the full stack below has actually been run,
-not just described. See [docs/04-test-report.md](04-test-report.md) for the 106/106
-passing checks, 31 of them against this real stack, and the real deployment bugs found
-and fixed getting it there (a stale PostgREST schema cache, a missing GoTrue connection
-role, an image that no longer pulls without login, and more).
+not just described. See [docs/04-test-report.md](04-test-report.md) for the current
+209/209 passing checks (35 of them against this real stack), and the real deployment
+bugs found and fixed getting it there (a stale PostgREST schema cache, a missing
+GoTrue connection role, an image that no longer pulls without login, and more).
 
 ### Run it
 
@@ -92,11 +92,8 @@ inspecting it before and after on a real project, not assumed.
 ```bash
 brew install postgresql@16   # for the psql client only — no local server needed
 
-for f in db/migrations/0001_*.sql db/migrations/0002_*.sql db/migrations/0003_*.sql \
-         db/migrations/0004_*.sql db/migrations/0005_*.sql db/migrations/0006_*.sql \
-         db/migrations/0007_*.sql db/migrations/0008_*.sql db/migrations/0009_*.sql \
-         db/migrations/0010_*.sql db/migrations/0011_*.sql db/migrations/0012_*.sql \
-         db/migrations/0013_*.sql db/migrations/0014_*.sql; do
+for f in db/migrations/00[0-9][0-9]_*.sql; do
+  [[ "$f" == *0000_bootstrap.sql ]] && continue
   echo "Applying $f"
   PGPASSWORD='<your DB password>' psql -v ON_ERROR_STOP=1 \
     -h db.<project-ref>.supabase.co -p 5432 -U postgres -d postgres -f "$f"
@@ -105,6 +102,21 @@ done
 PGPASSWORD='<your DB password>' psql -h db.<project-ref>.supabase.co -p 5432 \
   -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
 ```
+
+(As of 2026-09-20 that's migrations `0001` through `0024`; the glob above
+picks up whatever exists at the time you run it rather than needing to be
+kept in sync by hand — the earlier version of this doc hardcoded the file
+list through `0014` and had already gone stale by `0015`.)
+
+**Critical, learned the hard way**: PostgREST caches the database schema at
+startup and never notices a new table/view/function until told. The
+`NOTIFY pgrst, 'reload schema';` above covers a full batch apply, but if you
+apply a *single* migration later while iterating (patching something, adding
+one more table), you must run that same `NOTIFY` again right after — skipping
+it doesn't error loudly, it just makes the new capability silently 404/500 on
+exactly the endpoint that needs it. This bit real work in this project twice
+(rate limiting's `check_rate_limit` RPC, and the `teacher_response_time`/
+`favorite_teacher` additions) before the habit stuck.
 
 Verify: `curl -H "apikey: <publishable key>" https://<project-ref>.supabase.co/rest/v1/feature_flags?select=*`
 should return the seeded row, not a 401.
@@ -128,7 +140,10 @@ Environment Variables settings, add everything from `.env.production.example`:
 `APP_HOSTNAME` (Vercel gives you this once the first deploy finishes, e.g.
 `teachercircle.vercel.app` — circle back and fill it in after), `POSTGREST_URL`,
 `GOTRUE_URL`, `GOTRUE_URL_BROWSER`, `SUPABASE_API_KEY`, `GOOGLE_OAUTH_ENABLED`,
-`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPI_PAYEE_VPA`, `UPI_PAYEE_NAME`. Deploy.
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPI_PAYEE_VPA`, `UPI_PAYEE_NAME`,
+`BREVO_API_KEY` (message notifications — see `.env.production.example` for
+why this is safe to leave unset if you don't need email notifications yet),
+optionally `EMAIL_SENDER_ADDRESS`/`EMAIL_SENDER_NAME`. Deploy.
 
 ### Step 5 — Verify
 
@@ -167,3 +182,5 @@ locally once that flag flips.
 | Google sign-in errors after redirect | Redirect URI mismatch | Must exactly match `https://<project-ref>.supabase.co/auth/v1/callback` in both Google Console and Supabase's Google provider settings |
 | Email/password signup succeeds but never logs the user in | Supabase's `mailer_autoconfirm` defaults to `false` (unlike local dev) | Expected — the UI now shows "check your email" (see `lib/gotrue.ts`'s `SignUpResult`); confirm the emailed link before signing in |
 | App works, then goes slow/404s after a week of no traffic | Free Supabase project auto-paused | First request wakes it in 10-30s; set up the Step 7 keep-alive to avoid this going forward |
+| `PGRST202 ... Could not find the function` from an RPC that definitely exists in a migration | PostgREST's schema cache hasn't been reloaded since that migration was applied | Run `NOTIFY pgrst, 'reload schema';` again — see the callout in Step 2 |
+| Any real admin action, or any page whose RLS touches `is_admin()`, returns a 500 with no other explanation | You're on a copy of this database from before `0020_fix_is_admin_recursion.sql` was applied | Apply `0020` — `is_admin()` recurses into itself infinitely on Supabase's specific Postgres build otherwise (not reproducible on local Postgres 15.8); see `docs/04-test-report.md` §3i for the full story |
