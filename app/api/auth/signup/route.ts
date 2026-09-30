@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await signUpWithPassword(email, password);
+    const requestHost = req.headers.get("x-forwarded-host") || req.headers.get("host");
+    const result = await signUpWithPassword(email, password, requestHost);
     if ("confirmationRequired" in result) {
       return NextResponse.json({ ok: true, confirmationRequired: true });
     }

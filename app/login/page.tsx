@@ -1,10 +1,12 @@
+import { headers } from "next/headers";
 import LoginForm from "./LoginForm";
 import { getAppBaseUrl } from "@/lib/url";
 
 export default function LoginPage() {
   const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID);
   const gotrueUrlBrowser = process.env.GOTRUE_URL_BROWSER || "http://localhost:9999";
-  const redirectTo = encodeURIComponent(`${getAppBaseUrl()}/auth/callback`);
+  const requestHost = headers().get("x-forwarded-host") || headers().get("host");
+  const redirectTo = encodeURIComponent(`${getAppBaseUrl(requestHost)}/auth/callback`);
   const googleHref = `${gotrueUrlBrowser}/authorize?provider=google&redirect_to=${redirectTo}`;
 
   return (

@@ -30,6 +30,30 @@ describe("signUpWithPassword confirmation redirect", () => {
     assert.deepStrictEqual(result, { confirmationRequired: true, user: { id: "user-1", email: "a@b.co" } });
   });
 
+  test("confirmation redirect uses the public request host when APP_HOSTNAME is localhost", async (t) => {
+    process.env.GOTRUE_URL = "http://gotrue.test";
+    process.env.APP_HOSTNAME = "localhost:3000";
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_URL;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    delete process.env.SUPABASE_API_KEY;
+
+    let capturedUrl = "";
+    t.mock.method(globalThis, "fetch", async (url: string) => {
+      capturedUrl = String(url);
+      return new Response(JSON.stringify({ id: "user-3", email: "c@d.co" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const { signUpWithPassword } = await import(`${gotrueModuleUrl}?signup-public-host=1`);
+    await signUpWithPassword("c@d.co", "Password1", "teachercircle.vercel.app");
+
+    const url = new URL(capturedUrl);
+    assert.strictEqual(url.searchParams.get("redirect_to"), "https://teachercircle.vercel.app/auth/callback");
+  });
+
   test("still returns the session when GoTrue autoconfirms and sends an access token", async (t) => {
     process.env.GOTRUE_URL = "http://gotrue.test";
     process.env.APP_HOSTNAME = "localhost:3000";
