@@ -24,7 +24,7 @@ Meilisearch `:7700`, Redis `:6379`, and MinIO `:9000` start in `docker-compose.y
 
 Session cookie: `tc_session`, httpOnly, `SameSite=Lax`, `secure` in production. The access token is a GoTrue JWT, checked for `exp` in `lib/auth.ts`, then the `users` row is loaded. There is no server-side revocation list.
 
-Google OAuth is the primary sign-in; email/password is the fallback. Local redirect is `http://localhost:9999/callback`. Production redirect is `https://<project-ref>.supabase.co/auth/v1/callback`. `getAppBaseUrl()` (`lib/url.ts`) must be passed as `redirect_to` on signup and logout. Omitting it made confirmation emails point at localhost, and a hardcoded `http://` logout URL plus a 307 (POST-preserving) made browsers warn on sign-out. Logout now uses 303.
+Google OAuth is the primary sign-in; email/password is the fallback. Local GoTrue redirect is `http://localhost:9999/callback`. Production GoTrue redirect is `https://<project-ref>.supabase.co/auth/v1/callback`. `getAppBaseUrl()` (`lib/url.ts`) builds this app's public origin. Signup must pass `${getAppBaseUrl()}/auth/callback` as the `redirect_to` **query parameter** on `POST /signup`. GoTrue's signup JSON schema has no `redirect_to` field; a body property is dropped and the confirmation email falls back to the Site URL. Logout uses `getAppBaseUrl()` and status 303.
 
 ## Request path
 
