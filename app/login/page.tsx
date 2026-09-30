@@ -1,29 +1,35 @@
+import { headers } from "next/headers";
+import CaptureReferral from "./CaptureReferral";
 import LoginForm from "./LoginForm";
+import { isGoogleSignInEnabled } from "@/lib/featureToggles";
 import { getAppBaseUrl } from "@/lib/url";
 
 export default function LoginPage() {
-  const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID);
+  const googleEnabled = isGoogleSignInEnabled();
   const gotrueUrlBrowser = process.env.GOTRUE_URL_BROWSER || "http://localhost:9999";
-  const redirectTo = encodeURIComponent(`${getAppBaseUrl()}/auth/callback`);
-  const googleHref = `${gotrueUrlBrowser}/authorize?provider=google&redirect_to=${redirectTo}`;
+  const requestHost = headers().get("x-forwarded-host") || headers().get("host");
+  const redirectTo = encodeURIComponent(`${getAppBaseUrl(requestHost)}/auth/callback`);
+  const apiKey = process.env.SUPABASE_API_KEY;
+  const googleHref =
+    `${gotrueUrlBrowser}/authorize?provider=google&redirect_to=${redirectTo}` +
+    (apiKey ? `&apikey=${encodeURIComponent(apiKey)}` : "");
 
   return (
     <div>
+      <CaptureReferral />
       <h1>Sign in</h1>
       <p className="hint">
-        Google is the primary sign-in path in production. Locally, without Google
-        credentials configured, use email + password below — it exercises the exact
-        same account/role/profile flow.
+        Continue with Gmail, or use email and password below. Both create the same account.
       </p>
 
       <div className="card">
         <a
-          href={googleHref}
+          href={googleEnabled ? googleHref : undefined}
           className="btn secondary"
           aria-disabled={!googleEnabled}
-          title={googleEnabled ? undefined : "Set GOOGLE_CLIENT_ID/SECRET in .env to enable this"}
+          title={googleEnabled ? undefined : "Turn on the Google provider in Supabase, or set GOOGLE_CLIENT_ID"}
         >
-          Continue with Google{!googleEnabled && " (not configured)"}
+          Continue with Gmail{!googleEnabled && " (not configured)"}
         </a>
       </div>
 

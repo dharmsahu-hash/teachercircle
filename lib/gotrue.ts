@@ -42,15 +42,25 @@ async function gotrue(path: string, body: unknown) {
   return data;
 }
 
-export async function signUpWithPassword(email: string, password: string): Promise<SignUpResult> {
-  // Without this, Supabase falls back to its dashboard "Site URL" default —
-  // found still pointing at http://localhost:3000 in production, so every
-  // confirmation email sent a real user back to a dev server they can't
-  // reach. Passing it explicitly here makes this correct per-environment
-  // regardless of that dashboard setting. Must match an entry already in
-  // Supabase's Redirect URLs allow-list (same one the Google OAuth flow
-  // uses) or GoTrue silently ignores it.
-  const data = await gotrue("/signup", { email, password, redirect_to: `${getAppBaseUrl()}/auth/callback` });
+export async function signUpWithPassword(
+  email: string,
+  password: string,
+  requestHost?: string | null
+): Promise<SignUpResult> {
+  // GoTrue's SignupParams struct has no redirect_to field. It reads that
+  // value only from the query string, a form field, or a redirect_to header
+  // (utilities.getRedirectTo). A JSON body property is ignored, so the
+  // confirmation email falls back to the project's Site URL. The query
+  // parameter is what supabase-js sends. getAppBaseUrl must not be
+  // localhost here: GoTrue will happily embed that, and the inbox link
+  // opens a dev server. If this URL's host is not the Supabase Site URL
+  // and is not on the Redirect URLs allow-list, GoTrue drops it and uses
+  // Site URL instead — that dashboard value also has to be the public app.
+  const redirectTo = `${getAppBaseUrl(requestHost)}/auth/callback`;
+  const data = await gotrue(`/signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
+    email,
+    password,
+  });
   if (!data?.access_token) {
     return { confirmationRequired: true, user: { id: data.id, email: data.email } };
   }
