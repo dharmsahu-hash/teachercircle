@@ -13,7 +13,10 @@ managed) — see `docs/03-deployment.md` Part B. $0 either way, no credit card.
 [Deployment — local & free production](docs/03-deployment.md) ·
 [Test report](docs/04-test-report.md) ·
 [Architecture review & naming](docs/05-architecture-review.md) ·
-[Security/feature/competitive review — P0–P3, now shipped](docs/06-review-2026-09-20.md)
+[Security/feature/competitive review — P0–P3, now shipped](docs/06-review-2026-09-20.md) ·
+[AI context (2026-09-30)](docs/ai/CONTEXT.md)
+
+Agents working in this repo should also read [`AGENTS.md`](AGENTS.md). The matching external memory repo is [KnowledgeWala_AI_CONTEXT](https://github.com/dharmsahu-hash/KnowledgeWala_AI_CONTEXT) (`projects/teachercircle/`).
 
 This file covers local dev specifics and the scope decisions/bugs found while
 building it; the docs above cover architecture, data model, and the full
