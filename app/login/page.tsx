@@ -1,12 +1,11 @@
 import { headers } from "next/headers";
 import CaptureReferral from "./CaptureReferral";
 import LoginForm from "./LoginForm";
-import { PASSWORD_AUTH_UI_ENABLED, isGoogleSignInEnabled } from "@/lib/featureToggles";
+import { isGoogleSignInEnabled } from "@/lib/featureToggles";
 import { getAppBaseUrl } from "@/lib/url";
 
 export default function LoginPage() {
   const googleEnabled = isGoogleSignInEnabled();
-  const showPassword = PASSWORD_AUTH_UI_ENABLED || !googleEnabled;
   const gotrueUrlBrowser = process.env.GOTRUE_URL_BROWSER || "http://localhost:9999";
   const requestHost = headers().get("x-forwarded-host") || headers().get("host");
   const redirectTo = encodeURIComponent(`${getAppBaseUrl(requestHost)}/auth/callback`);
@@ -20,9 +19,7 @@ export default function LoginPage() {
       <CaptureReferral />
       <h1>Sign in</h1>
       <p className="hint">
-        {googleEnabled
-          ? "Use your Gmail account. No confirmation email is sent."
-          : "Google is the primary sign-in path. Until it is configured, use email and password below."}
+        Continue with Gmail, or use email and password below. Both create the same account.
       </p>
 
       <div className="card">
@@ -36,12 +33,8 @@ export default function LoginPage() {
         </a>
       </div>
 
-      {showPassword && (
-        <>
-          <h2>Email &amp; password</h2>
-          <LoginForm />
-        </>
-      )}
+      <h2>Email &amp; password</h2>
+      <LoginForm />
     </div>
   );
 }

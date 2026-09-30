@@ -6,12 +6,6 @@
 // Flip back to true to re-expose it — no other code needs to change.
 export const SUBSCRIPTION_UI_ENABLED = false;
 
-// Email/password signup asks GoTrue to send a confirmation email. The form
-// stays hidden while Google sign-in is the path users should use. The
-// /api/auth/signup route is unchanged so tests can still create accounts.
-// Set PASSWORD_AUTH_UI_ENABLED back to true to show the form again.
-export const PASSWORD_AUTH_UI_ENABLED = false;
-
 // Google is configured either with a client id in this app (local GoTrue)
 // or entirely in the Supabase dashboard (production). Supabase's hosted
 // auth URL is enough to show the button; the provider toggle still has to
