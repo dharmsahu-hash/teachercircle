@@ -9,7 +9,16 @@
 // Run with: node tests/system/run.mjs
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createFakeBackend } from "../fakes/fake-backend.mjs";
+
+// fileURLToPath, not URL.pathname: on Windows .pathname is "/D:/..." which is
+// not a valid cwd.
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+// Run Next's CLI with this same node binary instead of spawning "npx": on
+// Windows npx is npx.cmd, which spawn() can't find without a shell, and
+// killing the npx wrapper would leave the real server running.
+const NEXT_BIN = fileURLToPath(new URL("../../node_modules/next/dist/bin/next", import.meta.url));
 
 const APP_PORT = 3100;
 const GOTRUE_PORT = 19999;
@@ -88,8 +97,8 @@ async function main() {
   await backend.listen(GOTRUE_PORT, POSTGREST_PORT);
   console.log(`Fake GoTrue on :${GOTRUE_PORT}, fake PostgREST on :${POSTGREST_PORT}`);
 
-  const child = spawn("npx", ["next", "start", "-p", String(APP_PORT)], {
-    cwd: new URL("../../", import.meta.url).pathname,
+  const child = spawn(process.execPath, [NEXT_BIN, "start", "-p", String(APP_PORT)], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       POSTGREST_URL: `http://localhost:${POSTGREST_PORT}`,
