@@ -63,8 +63,9 @@ Migrations are ordered and append-only. Later files replace views and functions;
 | Restore lists again | `admin_restore_profile` sets `is_listed` | `0023` |
 | Favorites | `favorite_teacher` | `0024` |
 | Referrals | `users.referred_by`, `set_referred_by`, `get_referral_count` | `0025` |
+| Claim listing | `claim_unclaimed_listing`, `on_auth_user_email_confirmed` trigger, `admin_unclaimed_user_ids`; FKs to user-keyed tables made `ON UPDATE CASCADE`; audit action `claim` | `0026` |
 
-`handle_new_user` is redefined in `0001`, `0009`, `0010`, and `0011`. The live body is the `0011` version.
+`handle_new_user` is redefined in `0001`, `0009`, `0010`, `0011`, and `0026`. The live body is the `0026` version.
 
 ## App surface
 
@@ -82,7 +83,7 @@ SEO: `app/sitemap.ts`, `app/robots.ts`, per-teacher metadata and schema.org JSON
 - Search does not use the Meilisearch container.
 - Student and parent profiles are not the `student_profile` / `parent_profile` tables.
 - Generated avatars replaced MinIO photo upload.
-- An admin-created teacher and a later real signup with the same email stay unlinked.
+- An admin-created teacher is linked to a later signup with the same email only once that email is verified. Until then the auth user has no `users` row and is not signed in as far as the app is concerned. Admin pages show such listings as "Not claimed yet".
 - Response time is hidden below 3 replied conversations.
 - Self-attested badge is a declaration, not a background check.
 - Block is mutual: either side blocking silences the thread for both. Unblock is shown only when `blocked_by_me` is true.
@@ -130,7 +131,7 @@ From `docs/05` and `docs/07`, still true as of this review:
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
 - Optional: zod on request bodies, one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
 - G6 blog/content is not started. It needs writing, not a new table.
-- No claim-listing flow, no CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
+- No CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
 
 ## Doc index
 

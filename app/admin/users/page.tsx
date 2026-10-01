@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { pg } from "@/lib/db";
+import { pg, pgRpc } from "@/lib/db";
 
 export default async function AdminUsersPage({
   searchParams,
@@ -18,6 +18,11 @@ export default async function AdminUsersPage({
     (await pg(`/users?select=id,email,role,deleted_at,created_at&order=created_at.desc${filter}`, {
       token: user.token,
     })) ?? [];
+  // Admin-added listings whose teacher hasn't signed up yet (0026). Best
+  // effort: the list still renders if this call fails.
+  const unclaimed = new Set<string>(
+    ((await pgRpc("admin_unclaimed_user_ids", {}, user.token).catch(() => [])) ?? []) as string[]
+  );
 
   return (
     <div>
@@ -38,7 +43,10 @@ export default async function AdminUsersPage({
             <tr key={u.id}>
               <td>{u.email}</td>
               <td>{u.role ?? "—"}</td>
-              <td>{u.deleted_at ? "Deleted" : "Active"}</td>
+              <td>
+                {u.deleted_at ? "Deleted" : "Active"}
+                {unclaimed.has(u.id) && " · Not claimed yet"}
+              </td>
               <td><Link href={`/admin/users/${u.id}`}>Manage</Link></td>
             </tr>
           ))}

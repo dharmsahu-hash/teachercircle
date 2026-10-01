@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { pg } from "@/lib/db";
+import { pg, pgRpc } from "@/lib/db";
 import AdminUserDetail from "./AdminUserDetail";
 
 export default async function AdminUserDetailPage({ params }: { params: { id: string } }) {
@@ -11,6 +11,9 @@ export default async function AdminUserDetailPage({ params }: { params: { id: st
   const users = await pg(`/users?id=eq.${params.id}&select=*`, { token: admin.token });
   const targetUser = Array.isArray(users) ? users[0] : null;
   if (!targetUser) return <p>User not found.</p>;
+
+  const unclaimedIds = ((await pgRpc("admin_unclaimed_user_ids", {}, admin.token).catch(() => [])) ?? []) as string[];
+  const unclaimed = unclaimedIds.includes(params.id);
 
   let teacherProfile = null;
   if (targetUser.role === "teacher") {
@@ -29,7 +32,14 @@ export default async function AdminUserDetailPage({ params }: { params: { id: st
       <h1>{targetUser.email}</h1>
       <p className="hint">
         Role: {targetUser.role ?? "—"} · Status: {targetUser.deleted_at ? "Deleted" : "Active"}
+        {unclaimed && " · Not claimed yet"}
       </p>
+      {unclaimed && (
+        <p className="hint">
+          Added by an admin, no login yet. When this teacher signs up with {targetUser.email} and verifies
+          it (Google sign-in or the confirmation email), this listing becomes their account automatically.
+        </p>
+      )}
 
       <AdminUserDetail
         targetUserId={params.id}
