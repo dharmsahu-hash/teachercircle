@@ -109,7 +109,7 @@ is well beyond what most projects this size have. Two real gaps:
 | Priority | Items |
 |---|---|
 | **P0 — before any real users** | ~~#1 error sanitization~~ ✅ (2026-10-01, `publicErrorMessage` in `lib/db.ts`), ~~#2 rate limiting~~ ✅, #3 disable mailer autoconfirm + real SMTP (still open), ~~#4 security headers~~ ✅ |
-| **P1 — soon** | ~~#11 CI pipeline~~ ✅ (2026-10-01, `.github/workflows/ci.yml`, all three tiers), #5 zod validation (still open), ~~#9 search pagination~~ ✅, #8 response envelope (still open), #12 structured logging (still open) |
+| **P1 — soon** | ~~#11 CI pipeline~~ ✅ (2026-10-01, `.github/workflows/ci.yml`, all three tiers), ~~#5 zod validation~~ ✅ (2026-10-01, `lib/validation.ts`), ~~#9 search pagination~~ ✅, #8 response envelope (still open), #12 structured logging (still open) |
 | **P2 — scale-triggered** | #15 wire-or-remove Redis/Meilisearch, #16 materialized ratings, #17 the one missing index, Playwright E2E, ADRs, #6 JWT revocation — none of these touched by the P0–P3 pass; still open |
 
 None of these were implemented in *this* pass — they were recommendations at

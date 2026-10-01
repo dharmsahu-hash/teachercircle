@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pgRpc, PostgrestError, publicErrorMessage } from "@/lib/db";
 import { isValidFullName, isValidPhone } from "@/lib/contact";
+import { contactSchema, parseJsonBody } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const body = await req.json().catch(() => ({}));
-  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
-  const phone = typeof body.phone === "string" && body.phone.trim() ? body.phone.trim() : null;
+  const parsed = await parseJsonBody(req, contactSchema);
+  if (!parsed.ok) return parsed.response;
+  const fullName = parsed.data.fullName.trim();
+  const phone = parsed.data.phone?.trim() || null;
 
   if (!isValidFullName(fullName)) {
     return NextResponse.json({ error: "Please enter your name" }, { status: 400 });

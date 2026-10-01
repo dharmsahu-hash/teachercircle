@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { canReveal } from "@/lib/entitlement";
 import { pg, pgRpc, PostgrestError, publicErrorMessage } from "@/lib/db";
+import { invalidIdResponse, isId } from "@/lib/validation";
 
 export async function POST(req: NextRequest, { params }: { params: { teacherId: string } }) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isId(params.teacherId)) return invalidIdResponse();
 
   const entitlement = await canReveal(user.token, user.id);
   if (!entitlement.allowed) {

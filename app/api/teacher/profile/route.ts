@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, publicErrorMessage } from "@/lib/db";
+import { parseJsonBody, teacherProfileSchema } from "@/lib/validation";
 
 export async function GET() {
   const user = await requireSession().catch(() => null);
@@ -15,7 +16,9 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (user.role !== "teacher") return NextResponse.json({ error: "Teachers only" }, { status: 403 });
 
-  const body = await req.json();
+  const parsed = await parseJsonBody(req, teacherProfileSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   try {
     // Fetching the full existing row (not just its existence) is the fix for

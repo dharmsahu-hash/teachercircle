@@ -5,10 +5,12 @@ import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity
 import { sendEmail } from "@/lib/email";
 import { getAppBaseUrl } from "@/lib/url";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { invalidIdResponse, isId, messageSchema, parseJsonBody } from "@/lib/validation";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isId(params.id)) return invalidIdResponse();
 
   const rows = await pg(
     `/message?conversation_id=eq.${params.id}&select=id,sender_id,body,created_at&order=created_at.asc`,
@@ -32,9 +34,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isId(params.id)) return invalidIdResponse();
 
-  const { body } = await req.json().catch(() => ({}));
-  const trimmed = typeof body === "string" ? body.trim() : "";
+  const parsed = await parseJsonBody(req, messageSchema);
+  if (!parsed.ok) return parsed.response;
+  const trimmed = parsed.data.body.trim();
   if (!trimmed) return NextResponse.json({ error: "Message can't be empty" }, { status: 400 });
   if (containsAbusiveLanguage(trimmed)) {
     return NextResponse.json({ error: ABUSIVE_LANGUAGE_ERROR }, { status: 400 });

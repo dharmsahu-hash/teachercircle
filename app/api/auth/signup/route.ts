@@ -4,12 +4,12 @@ import { publicErrorMessage } from "@/lib/db";
 import { setSessionCookie } from "@/lib/session";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { passwordStrengthError } from "@/lib/password";
+import { signupSchema, parseJsonBody } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
-  const { email, password } = await req.json();
-  if (!email || !password) {
-    return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(req, signupSchema);
+  if (!parsed.ok) return parsed.response;
+  const { email, password } = parsed.data;
 
   // Server-side, not just client-side — anyone can call this API directly.
   const strengthError = passwordStrengthError(password);

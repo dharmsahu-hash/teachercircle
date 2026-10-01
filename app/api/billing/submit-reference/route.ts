@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, publicErrorMessage } from "@/lib/db";
+import { parseJsonBody, submitReferenceSchema } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const { transactionId, utr } = await req.json();
-  if (!transactionId || !utr) {
-    return NextResponse.json({ error: "transactionId and utr are required" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(req, submitReferenceSchema);
+  if (!parsed.ok) return parsed.response;
+  const { transactionId, utr } = parsed.data;
 
   try {
     // RLS (txn_owner_submit) only allows this row's owner to move it to

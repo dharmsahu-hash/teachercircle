@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, PostgrestError } from "@/lib/db";
+import { parseJsonBody, teacherIdSchema } from "@/lib/validation";
 
 export async function GET() {
   const user = await requireSession().catch(() => null);
@@ -21,8 +22,9 @@ export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const { teacherId } = await req.json().catch(() => ({}));
-  if (!teacherId) return NextResponse.json({ error: "teacherId is required" }, { status: 400 });
+  const parsed = await parseJsonBody(req, teacherIdSchema);
+  if (!parsed.ok) return parsed.response;
+  const { teacherId } = parsed.data;
 
   const existing = await pg(
     `/conversation?teacher_id=eq.${teacherId}&requester_id=eq.${user.id}&select=id`,

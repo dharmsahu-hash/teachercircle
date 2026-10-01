@@ -131,7 +131,7 @@ Local: `.env.example` (`DB_PASSWORD`, `JWT_SECRET`, Google client, `UPI_PAYEE_*`
 From `docs/05` and `docs/07`, still true as of this review:
 
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
-- Optional: zod on request bodies, one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
+- Optional: one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
 - No CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
 
 ## Doc index
