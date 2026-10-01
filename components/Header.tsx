@@ -2,10 +2,16 @@ import Link from "next/link";
 import { getSessionUser } from "@/lib/auth";
 import { pg } from "@/lib/db";
 import { SUBSCRIPTION_UI_ENABLED } from "@/lib/featureToggles";
-import Avatar from "./Avatar";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
-import { SearchIcon, BookIcon, ShieldIcon, InfoIcon, BellIcon } from "./icons";
+import { AccountMenu, MessagesButton, MobileMenu, PrimaryNav, type HeaderUser, type NavLink } from "./HeaderNav";
+
+const PRIMARY_LINKS: NavLink[] = [
+  { href: "/search", label: "Find a teacher" },
+  { href: "/tutors", label: "Browse" },
+  { href: "/blog", label: "Blog" },
+  { href: "/about", label: "About" },
+];
 
 export default async function Header() {
   const user = await getSessionUser().catch(() => null);
@@ -17,61 +23,60 @@ export default async function Header() {
       )
     : false;
 
+  // Role-specific links live in the account menu, so the main row stays the
+  // same for everyone.
+  const accountLinks: NavLink[] = user
+    ? [
+        { href: "/account", label: "My account" },
+        ...(user.role === "teacher" ? [{ href: "/teacher/profile", label: "My teacher profile" }] : []),
+        { href: "/messages", label: "Messages" },
+        { href: "/favorites", label: "Saved teachers" },
+        ...(SUBSCRIPTION_UI_ENABLED && user.role === "parent" ? [{ href: "/billing/subscribe", label: "Subscribe" }] : []),
+        ...(user.role === "admin" ? [{ href: "/admin/users", label: "Admin" }] : []),
+      ]
+    : [];
+
+  const headerUser: HeaderUser | null = user
+    ? {
+        name: user.fullName ?? user.email.split("@")[0],
+        email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
+        avatarSeed: user.avatarSeed ?? null,
+      }
+    : null;
+
   return (
     <header className="site-header">
-      <nav className="nav">
-        <Link href="/" className="brand">
+      <div className="header-inner">
+        <Link href="/" className="brand" aria-label="TeacherCircle home">
           <Logo />
-          <span>TeacherCircle</span>
+          <span>
+            Teacher<span className="brand-accent">Circle</span>
+          </span>
         </Link>
-        <div className="links">
-          <Link href="/search" className="nav-item">
-            <SearchIcon /> <span>Search</span>
-          </Link>
-          <Link href="/about" className="nav-item">
-            <InfoIcon /> <span>About</span>
-          </Link>
-          {user?.role === "teacher" && (
-            <Link href="/teacher/profile" className="nav-item">
-              <BookIcon /> <span>My profile</span>
-            </Link>
-          )}
-          {user && (
-            <Link href="/messages" className="nav-item nav-item-bell">
-              <BellIcon />
-              {hasUnread && <span className="unread-dot" aria-label="Unread messages" />}
-              <span>Messages</span>
-            </Link>
-          )}
-          {user && (
-            <Link href="/favorites" className="nav-item">
-              <span aria-hidden>★</span> <span>Saved</span>
-            </Link>
-          )}
-          {SUBSCRIPTION_UI_ENABLED && user?.role === "parent" && (
-            <Link href="/billing/subscribe" className="nav-item">Subscribe</Link>
-          )}
-          {user?.role === "admin" && (
-            <Link href="/admin/users" className="nav-item">
-              <ShieldIcon /> <span>Admin</span>
-            </Link>
-          )}
-          {user ? (
+
+        <PrimaryNav links={PRIMARY_LINKS} />
+
+        <div className="header-actions">
+          <ThemeToggle />
+          {headerUser ? (
             <>
-              <Link href="/account" className="account-link nav-item">
-                <Avatar avatarUrl={user.avatarUrl} avatarSeed={user.avatarSeed} label={user.fullName ?? user.email} />
-                <span>{user.fullName ?? "Account"}</span>
-              </Link>
-              <form action="/api/auth/logout" method="post">
-                <button type="submit" className="secondary">Sign out</button>
-              </form>
+              <MessagesButton hasUnread={hasUnread} />
+              <div className="desktop-only">
+                <AccountMenu user={headerUser} links={accountLinks} />
+              </div>
             </>
           ) : (
-            <Link href="/login" className="btn">Sign in</Link>
+            <div className="desktop-only header-cta">
+              <Link href="/login" className="btn ghost">Sign in</Link>
+              <Link href="/login" className="btn">List for free</Link>
+            </div>
           )}
-          <ThemeToggle />
+          <div className="mobile-only">
+            <MobileMenu primary={PRIMARY_LINKS} account={accountLinks} user={headerUser} />
+          </div>
         </div>
-      </nav>
+      </div>
     </header>
   );
 }

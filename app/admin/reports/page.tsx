@@ -53,7 +53,17 @@ export default async function AdminReportsPage() {
     <div>
       <h1>Message reports</h1>
       <p className="hint">Unresolved reports, oldest first.</p>
-      {enriched.length === 0 && <p className="hint">Nothing pending.</p>}
+      {enriched.length === 0 && (
+        <div className="card">
+          <p style={{ margin: 0 }}>
+            <b>No open reports.</b> Nothing needs your attention.
+          </p>
+          <p className="hint" style={{ margin: "6px 0 0" }}>
+            A report appears here when a student, parent or teacher uses <b>Report</b> inside a
+            message conversation. Resolved reports are not shown.
+          </p>
+        </div>
+      )}
       {enriched.map((r) => (
         <div key={r.id} className="card">
           <p>
