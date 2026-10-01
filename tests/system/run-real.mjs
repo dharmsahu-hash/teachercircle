@@ -10,6 +10,11 @@
 // Run with: node tests/system/run-real.mjs
 
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+// fileURLToPath, not URL.pathname: on Windows .pathname is "/D:/..." which is
+// not a valid cwd.
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 const BASE = "http://localhost:3000";
 // Real gap found the second time this script ran: it used fixed email
@@ -27,7 +32,7 @@ function check(name, pass, detail) {
 
 function psql(sql) {
   const cmd = `docker compose exec -T postgres psql -h 127.0.0.1 -U teachercircle -d postgres -t -A -c "${sql.replace(/"/g, '\\"')}"`;
-  return execSync(cmd, { cwd: new URL("../../", import.meta.url).pathname, encoding: "utf8" }).trim();
+  return execSync(cmd, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
 }
 
 function decodeJwt(token) {
@@ -38,6 +43,13 @@ function decodeJwt(token) {
 function makeClient() {
   let cookie = null;
   async function req(method, path, body) {
+    // This suite signs up far more than 5 accounts from one IP, so the real
+    // signup/login limits from 0021 (5/hour, 10/5min) would 429 the later
+    // signups and every step after them would run without a session. Clear
+    // just those counters first; rate limiting itself is covered by Tier 2.
+    if (path === "/api/auth/signup" || path === "/api/auth/login") {
+      psql(`delete from rate_limit_hit where rl_key like 'signup:%' or rl_key like 'login:%';`);
+    }
     const headers = { "Content-Type": "application/json" };
     if (cookie) headers["Cookie"] = cookie;
     const res = await fetch(BASE + path, {

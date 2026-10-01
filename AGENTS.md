@@ -25,6 +25,8 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 - **PostgREST schema cache.** After any migration that adds a table, view, or function, run `NOTIFY pgrst, 'reload schema';`. `db/run-migrations.sh` does this. A hand-applied migration that skips it fails as a silent 404, not a migration error.
 - **Skip `0000_bootstrap.sql` on Supabase.** It only patches a plain Postgres image (roles, `auth.uid()`, `auth.users` sync). Supabase already has those.
 - **Kong requires `apikey`.** Production sets `SUPABASE_API_KEY`. `lib/db.ts` and `lib/gotrue.ts` send it. Local PostgREST has no gateway, so the header is omitted when the env var is unset.
+- **Never send raw error text to the client.** Route `catch` blocks return `publicErrorMessage(err, "<route fallback>")` from `lib/db.ts`. It shows only the `raise exception` texts listed in `USER_FACING_DB_MESSAGES` (as friendly copy) and logs everything else server-side. A new `raise exception` meant for users must be added to that map. Login/signup may show a `GoTrueError` message (GoTrue's own user-facing text) but nothing else.
+- **CI must stay green on `stage`.** `.github/workflows/ci.yml` runs tsc, unit, build, Tier 2, then Tier 3 against the real Docker stack (without MinIO) on every push/PR to `stage` and `main`. Unit tests need Node 24+.
 - **Email failures must not fail the user action.** `lib/email.ts` no-ops without `BREVO_API_KEY`. Message send succeeds even if the notification does not.
 - **Signup `redirect_to` is a query parameter.** `signUpWithPassword` calls `POST /signup?redirect_to=<app>/auth/callback`. GoTrue ignores `redirect_to` inside the JSON body. `getAppBaseUrl()` must not be `localhost` for that link: a missing or local `APP_HOSTNAME` is ignored when the request host or `VERCEL_PROJECT_PRODUCTION_URL` is public. Supabase Authentication → URL Configuration must use the same public Site URL, or GoTrue replaces the link with Site URL.
 - **Gmail and email/password are both sign-in paths.** The email form stays on `/login`. `isGoogleSignInEnabled()` only decides whether the Gmail button is active. Google itself is enabled in the Supabase dashboard.
@@ -61,6 +63,6 @@ npm run build
 
 ## Open gaps (do not treat as accidental omissions)
 
-Error text from Postgres is returned to clients (`lib/db.ts` `PostgrestError`). No GitHub Actions. No zod. No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No "claim this listing" flow. No blog (growth item G6). No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
+No zod. No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No "claim this listing" flow. No blog (growth item G6). No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
 
 Detail and the bug history: `docs/ai/CONTEXT.md`, `README.md`, `docs/04-test-report.md`, `docs/05-architecture-review.md`.

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
-import { pgRpc } from "@/lib/db";
+import { pgRpc, publicErrorMessage } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
@@ -15,8 +15,8 @@ export async function POST(req: NextRequest) {
     // set_my_role() is SECURITY DEFINER and only succeeds once, while role IS NULL —
     // see db/migrations/0002_role_assignment.sql.
     await pgRpc("set_my_role", { new_role: role }, user.token);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not save your role") }, { status: 400 });
   }
 
   // Referral (G5, 0025_referrals.sql) — best-effort, never blocks onboarding.

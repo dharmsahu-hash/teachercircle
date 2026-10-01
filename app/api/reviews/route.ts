@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
-import { pg } from "@/lib/db";
+import { pg, publicErrorMessage } from "@/lib/db";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import { checkRateLimit } from "@/lib/rateLimit";
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       body: { teacher_id: teacherId, reviewer_id: user.id, rating, comment: comment ?? null },
     });
     return NextResponse.json(rows);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not save your feedback. You can leave feedback once per teacher, after connecting.") }, { status: 400 });
   }
 }

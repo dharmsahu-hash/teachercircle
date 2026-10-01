@@ -47,8 +47,51 @@ export async function pgRpc(name: string, args: Record<string, unknown> = {}, to
 
 export class PostgrestError extends Error {
   status: number;
+  // Postgres's own message (`message` in PostgREST's JSON error body), e.g.
+  // the text of a `raise exception` in one of our SQL functions.
+  dbMessage: string | null;
   constructor(status: number, body: string) {
     super(`PostgREST error ${status}: ${body}`);
     this.status = status;
+    let parsed: { message?: unknown } | null = null;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      // non-JSON body (gateway HTML, empty) — nothing to extract
+    }
+    this.dbMessage = typeof parsed?.message === "string" ? parsed.message : null;
   }
+}
+
+// The `raise exception` texts our own migrations use on purpose, mapped to
+// what a user should read. Anything not listed here — constraint names,
+// column names, policy text, Kong/PostgREST internals — must never reach the
+// client (docs/05 finding #1), so it falls through to the route's fallback.
+const USER_FACING_DB_MESSAGES: Record<string, string> = {
+  "not authorized": "You don't have permission to do that.",
+  "user not found": "That user could not be found.",
+  "not a participant": "You're not part of this conversation.",
+  "conversation not found": "That conversation could not be found.",
+  "transaction not pending": "This payment has already been processed.",
+  "role already assigned": "Your role has already been set.",
+  "invalid role": "Please choose a valid role.",
+  "not connected": "Connect with this teacher first.",
+  "name is required": "Name is required.",
+  "invalid phone number": "Please enter a valid phone number.",
+  "invalid avatar seed": "That avatar choice isn't valid.",
+  "referrer not found": "That invite link isn't valid.",
+  "cannot refer yourself": "You can't use your own invite link.",
+  "a user with this email already exists": "A user with this email already exists.",
+};
+
+// Turns any error thrown inside a route handler into a message that is safe
+// to send to the browser. The full error is logged server-side so it is
+// still visible in Vercel / docker logs.
+export function publicErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof PostgrestError && err.dbMessage) {
+    const friendly = USER_FACING_DB_MESSAGES[err.dbMessage];
+    if (friendly) return friendly;
+  }
+  console.error(err);
+  return fallback;
 }

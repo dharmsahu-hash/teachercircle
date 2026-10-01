@@ -9,7 +9,16 @@
 // Run with: node tests/system/run.mjs
 
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createFakeBackend } from "../fakes/fake-backend.mjs";
+
+// fileURLToPath, not URL.pathname: on Windows .pathname is "/D:/..." which is
+// not a valid cwd.
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+// Run Next's CLI with this same node binary instead of spawning "npx": on
+// Windows npx is npx.cmd, which spawn() can't find without a shell, and
+// killing the npx wrapper would leave the real server running.
+const NEXT_BIN = fileURLToPath(new URL("../../node_modules/next/dist/bin/next", import.meta.url));
 
 const APP_PORT = 3100;
 const GOTRUE_PORT = 19999;
@@ -88,8 +97,8 @@ async function main() {
   await backend.listen(GOTRUE_PORT, POSTGREST_PORT);
   console.log(`Fake GoTrue on :${GOTRUE_PORT}, fake PostgREST on :${POSTGREST_PORT}`);
 
-  const child = spawn("npx", ["next", "start", "-p", String(APP_PORT)], {
-    cwd: new URL("../../", import.meta.url).pathname,
+  const child = spawn(process.execPath, [NEXT_BIN, "start", "-p", String(APP_PORT)], {
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       POSTGREST_URL: `http://localhost:${POSTGREST_PORT}`,
@@ -201,6 +210,11 @@ async function runScenarios(backend) {
   {
     const r = await teacherClient.post("/api/auth/role", { role: "parent" });
     check("3.3 Re-assign role after already set -> 400 (immutable)", r.status === 400, `got ${r.status}: ${JSON.stringify(r.body)}`);
+    check(
+      "3.3b SECURITY: a known SQL exception reaches the client as friendly text, not the raw PostgREST body",
+      r.body?.error === "Your role has already been set." && !/PostgREST|P0001|\{/.test(r.body?.error ?? ""),
+      JSON.stringify(r.body)
+    );
   }
 
   // ---------- 4. Teacher profile CRUD — positive & negative ----------
@@ -322,6 +336,11 @@ async function runScenarios(backend) {
   {
     const r = await studentClient.post("/api/reviews", { teacherId: meeraId, rating: 4, comment: "again" });
     check("7.2 Duplicate review same teacher -> rejected", r.status !== 200 && r.status !== 201, `got ${r.status}`);
+    check(
+      "7.2b SECURITY: an unlisted database error (unique violation) returns the route's fallback, no constraint/table names",
+      typeof r.body?.error === "string" && !/PostgREST|constraint|review_|duplicate key|\{/.test(r.body.error),
+      JSON.stringify(r.body)
+    );
   }
   const teacher2Id = [...backend.db.teacher_profile.keys()].find((id) => backend.db.teacher_profile.get(id).name === "Unlisted Teacher");
   {

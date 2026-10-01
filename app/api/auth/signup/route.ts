@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signUpWithPassword } from "@/lib/gotrue";
+import { signUpWithPassword, GoTrueError } from "@/lib/gotrue";
+import { publicErrorMessage } from "@/lib/db";
 import { setSessionCookie } from "@/lib/session";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { passwordStrengthError } from "@/lib/password";
@@ -31,7 +32,10 @@ export async function POST(req: NextRequest) {
     }
     setSessionCookie(result.access_token, result.expires_in);
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch (err) {
+    if (!(err instanceof GoTrueError)) {
+      return NextResponse.json({ error: publicErrorMessage(err, "Could not create your account — please try again.") }, { status: 500 });
+    }
     // GoTrue's own message here is an internal-sounding "email rate limit
     // exceeded" — Supabase's built-in mailer is hard-capped at 2 emails/hour
     // on every plan, raised only by configuring custom SMTP (see

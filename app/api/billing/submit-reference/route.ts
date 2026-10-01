@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
-import { pg } from "@/lib/db";
+import { pg, publicErrorMessage } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
     }
     return NextResponse.json({ status: "submitted" });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not submit payment reference") }, { status: 400 });
   }
 }

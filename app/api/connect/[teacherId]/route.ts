@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { canReveal } from "@/lib/entitlement";
-import { pg, pgRpc, PostgrestError } from "@/lib/db";
+import { pg, pgRpc, PostgrestError, publicErrorMessage } from "@/lib/db";
 
 export async function POST(req: NextRequest, { params }: { params: { teacherId: string } }) {
   const user = await requireSession().catch(() => null);
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { teacherId: 
       user.token
     );
     return NextResponse.json({ contact });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not connect with this teacher") }, { status: 400 });
   }
 }
