@@ -78,3 +78,36 @@ describe("signUpWithPassword confirmation redirect", () => {
     assert.strictEqual(result.access_token, "tok");
   });
 });
+
+describe("resendSignupConfirmation", () => {
+  test("calls GoTrue /resend with type=signup and the same public redirect_to as signup, on the query string", async (t) => {
+    process.env.GOTRUE_URL = "http://gotrue.test";
+    process.env.APP_HOSTNAME = "localhost:3000";
+    process.env.VERCEL_ENV = "production";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "teachercircle.vercel.app";
+    delete process.env.SUPABASE_API_KEY;
+
+    const logged: string[] = [];
+    t.mock.method(console, "info", (msg: string) => logged.push(msg));
+    let capturedUrl = "";
+    let capturedBody = "";
+    t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+      capturedUrl = String(url);
+      capturedBody = String(init.body);
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    const { resendSignupConfirmation } = await import(`${gotrueModuleUrl}?resend=1`);
+    await resendSignupConfirmation("a@b.co", "localhost:3000");
+
+    const url = new URL(capturedUrl);
+    assert.strictEqual(url.origin + url.pathname, "http://gotrue.test/resend");
+    assert.strictEqual(url.searchParams.get("redirect_to"), "https://teachercircle.vercel.app/auth/callback");
+    assert.deepStrictEqual(JSON.parse(capturedBody), { type: "signup", email: "a@b.co" });
+    // The diagnostic log line carries the host only, never the email.
+    assert.deepStrictEqual(logged, ["auth: confirmation email redirect_to host = teachercircle.vercel.app"]);
+
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  });
+});

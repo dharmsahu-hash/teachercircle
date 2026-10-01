@@ -833,6 +833,32 @@ async function runScenarios(backend) {
       JSON.stringify(r.body)
     );
   }
+
+  // ---------- 21. Resend confirmation email ----------
+  {
+    // As on Vercel: the public host arrives as x-forwarded-host.
+    const res = await fetch(BASE + "/api/auth/resend-confirmation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-host": "teachercircle.vercel.app", "x-forwarded-for": "10.9.9.1" },
+      body: JSON.stringify({ email: "waiting@test.local" }),
+    });
+    const sent = (backend.db.resends ?? []).at(-1);
+    check(
+      "21.1 Resend asks GoTrue for a signup email whose redirect_to is the public /auth/callback, not localhost",
+      res.status === 200 && sent?.type === "signup" && sent?.email === "waiting@test.local" && sent?.redirect_to === "https://teachercircle.vercel.app/auth/callback",
+      JSON.stringify(sent)
+    );
+  }
+  {
+    const r = await makeClient().post("/api/auth/resend-confirmation", { email: "not-an-email" });
+    check("21.2 Resend rejects an invalid email address", r.status === 400, `got ${r.status}`);
+  }
+  {
+    const c = makeClient();
+    for (let i = 0; i < 3; i++) await c.post("/api/auth/resend-confirmation", { email: `r${i}@test.local` });
+    const r = await c.post("/api/auth/resend-confirmation", { email: "r4@test.local" });
+    check("21.3 Resend is rate limited (4th request from one IP within an hour -> 429)", r.status === 429, `got ${r.status}`);
+  }
 }
 
 main();

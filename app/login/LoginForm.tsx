@@ -11,6 +11,42 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  // Shown after signup and when sign-in fails because the email is not
+  // confirmed yet (GoTrue: "Email not confirmed").
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
+  const [resendError, setResendError] = useState<string | null>(null);
+  const needsConfirmation = Boolean(error && /not confirmed/i.test(error));
+
+  async function resendConfirmation() {
+    setResendError(null);
+    setResendState("sending");
+    try {
+      const res = await fetch("/api/auth/resend-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not send the email");
+      setResendState("sent");
+    } catch (err: any) {
+      setResendError(err.message);
+      setResendState("idle");
+    }
+  }
+
+  const resendBlock = (
+    <div style={{ marginTop: 12 }}>
+      {resendState === "sent" ? (
+        <p className="hint">A new confirmation link is on its way to {email}. Check spam too.</p>
+      ) : (
+        <button type="button" className="secondary" disabled={resendState === "sending"} onClick={resendConfirmation}>
+          {resendState === "sending" ? "Sending…" : "Resend confirmation email"}
+        </button>
+      )}
+      {resendError && <p className="error">{resendError}</p>}
+    </div>
+  );
 
   // G5 referral (docs/07-growth-review-2026-09-20.md): a ?ref=<inviterId>
   // link lands here. Stashed in localStorage, not just read from the URL,
@@ -52,7 +88,12 @@ export default function LoginForm() {
   }
 
   if (confirmationSent) {
-    return <p className="hint">Check your email for a confirmation link, then come back and sign in.</p>;
+    return (
+      <div>
+        <p className="hint">Check your email for a confirmation link, then come back and sign in.</p>
+        {resendBlock}
+      </div>
+    );
   }
 
   return (
@@ -76,6 +117,7 @@ export default function LoginForm() {
       )}
 
       {error && <p className="error">{error}</p>}
+      {needsConfirmation && email && resendBlock}
 
       <div className="row">
         <button type="submit" disabled={busy}>

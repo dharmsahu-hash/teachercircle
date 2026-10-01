@@ -62,6 +62,10 @@ export const signupSchema = z.object({
 });
 export const loginSchema = signupSchema;
 
+export const resendConfirmationSchema = z.object({
+  email: z.string({ message: "Please enter your email address" }).trim().min(1, "Please enter your email address").pipe(email),
+});
+
 export const roleSchema = z.object({
   role: z.enum(["student", "parent", "teacher"], { message: "Invalid role" }),
   // Referral id from an invite link. Best effort: a bad value is ignored by

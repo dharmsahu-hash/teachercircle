@@ -145,6 +145,26 @@ Environment Variables settings, add everything from `.env.production.example`:
 why this is safe to leave unset if you don't need email notifications yet),
 optionally `EMAIL_SENDER_ADDRESS`/`EMAIL_SENDER_NAME`. Deploy.
 
+### Step 4b — Supabase URL configuration (required for email confirmation links)
+
+Supabase dashboard → **Authentication → URL Configuration**:
+
+- **Site URL**: `https://teachercircle.vercel.app` (your production URL, with `https://`
+  and no trailing path). Never leave it as `http://localhost:3000`.
+- **Redirect URLs**: add `https://teachercircle.vercel.app/auth/callback`. To make
+  confirmation links work from Vercel preview deployments of `stage` as well, also add
+  `https://*-<your-vercel-team>.vercel.app/auth/callback`.
+
+Why: the app sends `redirect_to=<app>/auth/callback` with every signup and
+"Resend confirmation email" (`lib/gotrue.ts`). Supabase only honors it if that URL
+is on the Redirect URLs list; otherwise it silently uses the **Site URL**. If the
+Site URL is still localhost, every confirmation email links to localhost. The app
+logs `auth: confirmation email redirect_to host = ...` on each signup, so Vercel's
+logs show what was requested.
+
+Also check **Authentication → Email Templates → Confirm signup**: the link must
+use `{{ .ConfirmationURL }}`, not a hand-built `{{ .SiteURL }}/...` link.
+
 ### Step 5 — Verify
 
 ```bash
@@ -235,6 +255,7 @@ meaningful EU traffic ever shows up in Analytics.
 | Every request to Supabase returns 401 | Missing `apikey` header | Confirm `SUPABASE_API_KEY` is set in Vercel — required on every `/rest/v1` and `/auth/v1` call, bearer token or not |
 | Google sign-in errors after redirect | Redirect URI mismatch | Must exactly match `https://<project-ref>.supabase.co/auth/v1/callback` in both Google Console and Supabase's Google provider settings |
 | Email/password signup succeeds but never logs the user in | Supabase's `mailer_autoconfirm` defaults to `false` (unlike local dev) | Expected — the UI now shows "check your email" (see `lib/gotrue.ts`'s `SignUpResult`); confirm the emailed link before signing in |
+| Confirmation email links to `localhost` | Supabase **Site URL** is still `http://localhost:3000`, and/or the app's `/auth/callback` is not on **Redirect URLs**, so Supabase ignored the app's `redirect_to` | Fix both in Step 4b, then the user clicks **Resend confirmation email** on `/login`. Their old link may already have confirmed the account (Supabase verifies before redirecting), so also tell them to just try signing in. Vercel logs show `auth: confirmation email redirect_to host = ...`; if that is the public host, the app side is right |
 | App works, then goes slow/404s after a week of no traffic | Free Supabase project auto-paused | First request wakes it in 10-30s; set up the Step 7 keep-alive to avoid this going forward |
 | `PGRST202 ... Could not find the function` from an RPC that definitely exists in a migration | PostgREST's schema cache hasn't been reloaded since that migration was applied | Run `NOTIFY pgrst, 'reload schema';` again — see the callout in Step 2 |
 | Any real admin action, or any page whose RLS touches `is_admin()`, returns a 500 with no other explanation | You're on a copy of this database from before `0020_fix_is_admin_recursion.sql` was applied | Apply `0020` — `is_admin()` recurses into itself infinitely on Supabase's specific Postgres build otherwise (not reproducible on local Postgres 15.8); see `docs/04-test-report.md` §3i for the full story |

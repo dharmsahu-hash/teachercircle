@@ -245,6 +245,15 @@ export function createFakeBackend() {
       return json(res, 200, { access_token, refresh_token: "fake-refresh", expires_in: 3600, user: { id: user.id, email } });
     }
 
+    // Mirrors GoTrue POST /resend: records what was asked for so the
+    // system test can check the redirect_to the app sent.
+    if (req.method === "POST" && url.pathname === "/resend") {
+      const { type, email } = await readBody(req);
+      db.resends = db.resends ?? [];
+      db.resends.push({ type, email, redirect_to: url.searchParams.get("redirect_to") });
+      return json(res, 200, {});
+    }
+
     error(res, 404, "not found");
   });
 
