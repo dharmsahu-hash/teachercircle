@@ -310,6 +310,11 @@ export function createFakeBackend() {
             subscription_expires_at: null,
             deleted_at: null,
             self_attested_at: body.self_attested_at ?? null,
+            // 0027 columns and defaults
+            teaching_mode: body.teaching_mode ?? "home",
+            classes: body.classes ?? [],
+            boards: body.boards ?? [],
+            exams: body.exams ?? [],
           };
           db.teacher_profile.set(body.user_id, row);
           return json(res, 201, [row]);

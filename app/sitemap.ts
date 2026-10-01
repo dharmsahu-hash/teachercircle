@@ -32,7 +32,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // pages, but only for combinations with >= 1 real teacher — getDirectory()
   // itself only ever derives a city/pair from a real listing, so nothing
   // here needs a separate thin-content check.
-  const { cities, pairs } = await getDirectory();
+  const { cities, pairs, onlineSubjects, examSubjects, cityClassPages } = await getDirectory();
   const cityRoutes: MetadataRoute.Sitemap = [...cities.keys()].map((slug) => ({
     url: `${base}/tutors/${slug}`,
     changeFrequency: "weekly",
@@ -43,6 +43,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: "weekly",
     priority: 0.6,
   }));
+
+  // Growth #2 / #3 pages, same rule: only where a real teacher matches.
+  const weekly = (path: string, priority = 0.6): MetadataRoute.Sitemap[number] => ({
+    url: `${base}${path}`,
+    changeFrequency: "weekly",
+    priority,
+  });
+  const levelRoutes: MetadataRoute.Sitemap = [
+    ...(onlineSubjects.size > 0 ? [weekly("/tutors/online", 0.7)] : []),
+    ...[...onlineSubjects.keys()].map((s) => weekly(`/tutors/online/${s}`)),
+    ...[...examSubjects.entries()].flatMap(([exam, subjects]) => [
+      weekly(`/tutors/exam/${exam}`),
+      ...[...subjects.keys()].map((s) => weekly(`/tutors/exam/${exam}/${s}`)),
+    ]),
+    ...[...cityClassPages].map((p) => weekly(`/tutors/${p}`, 0.5)),
+  ];
 
   // G6: the blog index and every article.
   const blogRoutes: MetadataRoute.Sitemap = [
@@ -55,5 +71,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 
-  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...blogRoutes];
+  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...levelRoutes, ...blogRoutes];
 }

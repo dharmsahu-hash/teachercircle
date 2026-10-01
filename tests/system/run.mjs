@@ -884,6 +884,83 @@ async function runScenarios(backend) {
     const r = await c.post("/api/auth/resend-confirmation", { email: "r4@test.local" });
     check("21.3 Resend is rate limited (4th request from one IP within an hour -> 429)", r.status === 429, `got ${r.status}`);
   }
+
+  // ---------- 22. Growth #2 / #3: teaching mode, classes, boards, exams ----------
+  {
+    const r = await teacherClient.post("/api/teacher/profile", {
+      name: "Meera R.", city: "Bengaluru", is_listed: true,
+      teaching_mode: "both", classes: ["10", "9", "10"], boards: ["cbse"], exams: ["neet"],
+    });
+    check(
+      "22.1 Teacher saves mode, classes, boards and exams (duplicates removed)",
+      r.status === 200 && r.body?.teaching_mode === "both" && JSON.stringify(r.body?.classes) === '["10","9"]' && r.body?.exams?.[0] === "neet",
+      JSON.stringify(r.body)
+    );
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { boards: ["cbse", "harvard"] });
+    check("22.2 A board outside the fixed list is rejected", r.status === 400 && r.body?.error === "Unknown board", JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { teaching_mode: "carrier-pigeon" });
+    check("22.3 An unknown teaching mode is rejected", r.status === 400, `got ${r.status}`);
+  }
+  const html = async (path) => {
+    const r = await makeClient().get(path);
+    return { status: r.status, html: String(r.body).replace(/<!-- -->/g, "") };
+  };
+  {
+    const { status, html: h } = await html("/tutors/online/maths");
+    check("22.4 /tutors/online/maths lists the online Maths teacher", status === 200 && h.includes("Online Maths tutors") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const { status } = await html("/tutors/online/geography-xyz");
+    check("22.5 An online subject nobody teaches -> 404 (no thin page)", status === 404, `got ${status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/exam/neet/maths");
+    check("22.6 /tutors/exam/neet/maths lists the NEET teacher", status === 200 && h.includes("NEET Maths tutors") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const { status } = await html("/tutors/exam/jee");
+    check("22.7 An exam nobody prepares for -> 404", status === 404, `got ${status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/bengaluru/maths/class-10");
+    check("22.8 /tutors/bengaluru/maths/class-10 -> 200 with the matching teacher", status === 200 && h.includes("Class 10 Maths tutors in Bengaluru") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const a = await html("/tutors/bengaluru/maths/class-3");
+    const b = await html("/tutors/bengaluru/maths/grade-10");
+    check("22.9 A class nobody teaches, or a malformed level slug -> 404", a.status === 404 && b.status === 404, `got ${a.status}, ${b.status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/bengaluru/maths");
+    check("22.10 City+subject page links to its class pages and says who teaches online", status === 200 && h.includes('href="/tutors/bengaluru/maths/class-10"') && /also teach(es)? online/.test(h), `got ${status}`);
+  }
+  {
+    const r1 = await makeClient().get("/api/search?subject=Maths");
+    const online = await html("/search?subject=Maths&mode=online&cls=10&exam=neet");
+    const none = await html("/search?subject=Maths&exam=ielts");
+    check(
+      "22.11 Search filters by mode, class and exam",
+      online.status === 200 && online.html.includes("Meera") && none.status === 200 && !none.html.includes("Meera R."),
+      `online ${online.status}, ielts ${none.status}, api ${r1.status}`
+    );
+  }
+  {
+    const { status, html: h } = await html("/tutors");
+    check("22.12 /tutors hub shows Online and Exam preparation sections", status === 200 && h.includes('href="/tutors/online/maths"') && h.includes('href="/tutors/exam/neet"'), `got ${status}`);
+  }
+  {
+    const r = await makeClient().get("/sitemap.xml");
+    const xml = String(r.body);
+    check("22.13 sitemap includes the online, exam and class pages", xml.includes("/tutors/online/maths") && xml.includes("/tutors/exam/neet/maths") && xml.includes("/tutors/bengaluru/maths/class-10"), `got ${r.status}`);
+  }
+  {
+    const { status, html: h } = await html("/search?subject=Maths&minPrice=abc%26x");
+    check("22.14 A malformed price filter is ignored instead of erroring", status === 200, `got ${status}`);
+  }
 }
 
 main();

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { BOARDS, CLASSES, EXAMS, MODE_LABELS, TEACHING_MODES, type TeachingMode } from "@/lib/levels";
 
 type Profile = {
   name?: string;
@@ -15,7 +16,43 @@ type Profile = {
   contact_phone?: string;
   is_listed?: boolean;
   self_attested_at?: string | null;
+  teaching_mode?: TeachingMode;
+  classes?: string[];
+  boards?: string[];
+  exams?: string[];
 } | null;
+
+// Toggle chips for a fixed list (classes, boards, exams).
+function ChipGroup({
+  options,
+  selected,
+  onToggle,
+  label,
+}: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  label: string;
+}) {
+  return (
+    <div className="chip-group" role="group" aria-label={label}>
+      {options.map((o) => {
+        const on = selected.includes(o.value);
+        return (
+          <button
+            key={o.value}
+            type="button"
+            className={`chip${on ? " selected" : ""}`}
+            aria-pressed={on}
+            onClick={() => onToggle(o.value)}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function TeacherProfileForm({ initial }: { initial: Profile }) {
   const router = useRouter();
@@ -31,6 +68,10 @@ export default function TeacherProfileForm({ initial }: { initial: Profile }) {
     contact_phone: initial?.contact_phone ?? "",
     is_listed: initial?.is_listed ?? true,
     self_attested: Boolean(initial?.self_attested_at),
+    teaching_mode: (initial?.teaching_mode ?? "home") as TeachingMode,
+    classes: initial?.classes ?? [],
+    boards: initial?.boards ?? [],
+    exams: initial?.exams ?? [],
   });
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -39,6 +80,11 @@ export default function TeacherProfileForm({ initial }: { initial: Profile }) {
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
     setSaved(false);
+  }
+
+  function toggle(key: "classes" | "boards" | "exams", value: string) {
+    const list = form[key];
+    set(key, list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
 
   async function save(e: React.FormEvent) {
@@ -86,6 +132,52 @@ export default function TeacherProfileForm({ initial }: { initial: Profile }) {
 
         <label>City</label>
         <input value={form.city} onChange={(e) => set("city", e.target.value)} />
+
+        <label>How do you teach?</label>
+        <div className="chip-group" role="radiogroup" aria-label="Teaching mode">
+          {TEACHING_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={form.teaching_mode === m}
+              className={`chip${form.teaching_mode === m ? " selected" : ""}`}
+              onClick={() => set("teaching_mode", m)}
+            >
+              {MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+        <p className="hint" style={{ marginTop: 6 }}>
+          Online teachers also appear on national pages like &quot;Online Maths tutors&quot;, not only in their city.
+        </p>
+
+        <label>Classes you teach</label>
+        <ChipGroup
+          label="Classes"
+          options={CLASSES.map((c) => ({ value: c, label: c }))}
+          selected={form.classes}
+          onToggle={(v) => toggle("classes", v)}
+        />
+
+        <label>Boards</label>
+        <ChipGroup
+          label="Boards"
+          options={BOARDS.map((b) => ({ value: b.code, label: b.label }))}
+          selected={form.boards}
+          onToggle={(v) => toggle("boards", v)}
+        />
+
+        <label>Exam preparation</label>
+        <ChipGroup
+          label="Exams"
+          options={EXAMS.map((e) => ({ value: e.code, label: e.label }))}
+          selected={form.exams}
+          onToggle={(v) => toggle("exams", v)}
+        />
+        <p className="hint" style={{ marginTop: 6 }}>
+          Optional. These help parents searching for, say, &quot;Class 10 Maths tutor&quot; or &quot;NEET Physics tutor&quot; find you.
+        </p>
 
         <label>Pincode</label>
         <input value={form.pincode} onChange={(e) => set("pincode", e.target.value)} />

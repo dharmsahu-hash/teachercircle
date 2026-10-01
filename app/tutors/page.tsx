@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDirectory } from "@/lib/directory";
+import { examLabel, EXAM_CODES } from "@/lib/levels";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,9 @@ export const metadata: Metadata = {
 };
 
 export default async function TutorsHubPage() {
-  const { cities, subjects } = await getDirectory();
+  const { cities, subjects, onlineSubjects, examSubjects } = await getDirectory();
+  const onlineEntries = [...onlineSubjects.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const examEntries = EXAM_CODES.filter((e) => examSubjects.has(e));
   const cityEntries = [...cities.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const subjectEntries = [...subjects.entries()].sort((a, b) => a[1].localeCompare(b[1]));
 
@@ -47,6 +50,34 @@ export default async function TutorsHubPage() {
             </Link>
           ))}
         </div>
+      )}
+
+      {/* Growth #2 / #3: only sections with a real teacher behind them. */}
+      {onlineEntries.length > 0 && (
+        <>
+          <h2>Online</h2>
+          <div className="pills">
+            <Link href="/tutors/online" className="pill pill-link">All online tutors</Link>
+            {onlineEntries.map(([slug, name]) => (
+              <Link key={slug} href={`/tutors/online/${slug}`} className="pill pill-link">
+                Online {name}
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+
+      {examEntries.length > 0 && (
+        <>
+          <h2>Exam preparation</h2>
+          <div className="pills">
+            {examEntries.map((e) => (
+              <Link key={e} href={`/tutors/exam/${e}`} className="pill pill-link">
+                {examLabel(e)}
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import FavoriteButton from "@/components/FavoriteButton";
 import WhatsAppShare from "@/components/WhatsAppShare";
 import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
+import { boardLabel, classesLabel, examLabel, MODE_LABELS, type TeachingMode } from "@/lib/levels";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +28,15 @@ type TeacherRow = {
   self_attested_at: string | null;
   avg_response_hours: number | null;
   replied_conversation_count: number | null;
+  teaching_mode: TeachingMode | null;
+  classes: string[] | null;
+  boards: string[] | null;
+  exams: string[] | null;
 };
 
 async function getTeacher(id: string): Promise<TeacherRow | null> {
   const rows = await pg(
-    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count`
+    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count,teaching_mode,classes,boards,exams`
   );
   return Array.isArray(rows) ? rows[0] ?? null : null;
 }
@@ -127,6 +132,32 @@ export default async function TeacherPublicPage({ params }: { params: { id: stri
             {teacher.rate_per_hour ? ` · ₹${teacher.rate_per_hour}/hr` : ""}
             {teacher.experience_years ? ` · ${teacher.experience_years} yrs experience` : ""}
           </p>
+          <dl className="teacher-facts">
+            {teacher.teaching_mode && (
+              <>
+                <dt>Teaches</dt>
+                <dd>{MODE_LABELS[teacher.teaching_mode]}</dd>
+              </>
+            )}
+            {classesLabel(teacher.classes) && (
+              <>
+                <dt>Level</dt>
+                <dd>{classesLabel(teacher.classes)}</dd>
+              </>
+            )}
+            {(teacher.boards?.length ?? 0) > 0 && (
+              <>
+                <dt>Boards</dt>
+                <dd>{teacher.boards!.map(boardLabel).join(", ")}</dd>
+              </>
+            )}
+            {(teacher.exams?.length ?? 0) > 0 && (
+              <>
+                <dt>Exam prep</dt>
+                <dd>{teacher.exams!.map(examLabel).join(", ")}</dd>
+              </>
+            )}
+          </dl>
           <div className="pills">
             {teacher.subjects?.map((s: string) => (
               <span key={s} className="pill">{s}</span>

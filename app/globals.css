@@ -585,3 +585,21 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 .invite-card h3 { font-size: 17px; }
 .whatsapp-btn { background: #1f9d55; color: #fff; margin-top: 4px; }
 .whatsapp-btn:hover { background: #17834a; }
+
+/* Toggle chips (teacher profile: mode, classes, boards, exams) */
+.chip-group { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+.chip {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.levels-line { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--accent); }
+.teacher-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 10px; font-size: 14px; }
+.teacher-facts dt { color: var(--muted); font-weight: 600; }
+.teacher-facts dd { margin: 0; color: var(--ink); }

@@ -11,6 +11,7 @@ export type SummaryTeacher = {
   review_count: number;
   avg_rating: number;
   subjects: string[] | null;
+  teaching_mode?: string | null;
 };
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
@@ -30,12 +31,16 @@ function listJoin(items: string[]): string {
 
 export function summarizeListings(
   teachers: SummaryTeacher[],
-  { place, subject }: { place: string; subject?: string }
+  { place, subject, onlineOnly = false }: { place: string; subject?: string; onlineOnly?: boolean }
 ): string[] {
   const n = teachers.length;
   if (n === 0) return [];
   const what = subject ? `${subject} teacher${n === 1 ? "" : "s"}` : `teacher${n === 1 ? "" : "s"}`;
-  const sentences: string[] = [`${n === 1 ? "There is" : "There are"} ${n} ${what} listed in ${place}.`];
+  const sentences: string[] = [
+    onlineOnly
+      ? `${n === 1 ? "There is" : "There are"} ${n} ${what} teaching ${place}.`
+      : `${n === 1 ? "There is" : "There are"} ${n} ${what} listed in ${place}.`,
+  ];
 
   // Rates: ignore missing or zero (zero means "not stated" in practice).
   const rates = teachers
@@ -71,6 +76,18 @@ export function summarizeListings(
     sentences.push(
       `${rated.length === n ? (n === 1 ? "This teacher has" : "All of them have") : `${rated.length} of them ${rated.length === 1 ? "has" : "have"}`} feedback from students and parents, averaging ${weighted.toFixed(1)} out of 5.`
     );
+  }
+
+  // Growth #2: who also teaches online (pointless on the online pages).
+  if (!onlineOnly) {
+    const online = teachers.filter((t) => t.teaching_mode === "online" || t.teaching_mode === "both").length;
+    if (online > 0) {
+      sentences.push(
+        online === n
+          ? n === 1 ? "This teacher also teaches online." : "All of them also teach online."
+          : `${online} of them also ${online === 1 ? "teaches" : "teach"} online.`
+      );
+    }
   }
 
   // Most-taught subjects (city pages only; a subject page already says it).

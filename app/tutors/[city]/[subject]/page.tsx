@@ -4,6 +4,7 @@ import { getCitySubjectPage } from "@/lib/directory";
 import { getAppBaseUrl } from "@/lib/url";
 import TeacherCard from "@/components/TeacherCard";
 import { summarizeListings } from "@/lib/listingSummary";
+import { CLASSES, classSlug } from "@/lib/levels";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,21 @@ export default async function CitySubjectTutorsPage({
       <p className="listing-summary">
         {summarizeListings(data.teachers, { place: data.cityName, subject: data.subjectName }).join(" ")}
       </p>
+
+      {/* Growth #3: narrower class pages, only for classes a teacher here lists. */}
+      {(() => {
+        const taught = new Set(data.teachers.flatMap((t) => t.classes ?? []));
+        const classes = CLASSES.filter((c) => taught.has(c));
+        return classes.length > 0 ? (
+          <div className="pills" style={{ marginBottom: 20 }}>
+            {classes.map((c) => (
+              <Link key={c} href={`/tutors/${params.city}/${params.subject}/${classSlug(c)}`} className="pill pill-link">
+                Class {c}
+              </Link>
+            ))}
+          </div>
+        ) : null;
+      })()}
 
       <div className="teacher-grid">
         {data.teachers.map((t) => (

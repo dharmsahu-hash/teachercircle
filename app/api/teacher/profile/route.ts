@@ -76,6 +76,11 @@ function normalize(body: any, fallback: any = {}) {
     contact_email: body.contact_email ?? fallback.contact_email ?? null,
     contact_phone: body.contact_phone ?? fallback.contact_phone ?? null,
     is_listed: body.is_listed ?? fallback.is_listed ?? true,
+    teaching_mode: body.teaching_mode ?? fallback.teaching_mode ?? "home",
+    // De-duplicated; order does not matter for the array columns.
+    classes: [...new Set<string>(body.classes ?? fallback.classes ?? [])],
+    boards: [...new Set<string>(body.boards ?? fallback.boards ?? [])],
+    exams: [...new Set<string>(body.exams ?? fallback.exams ?? [])],
     // The form always sends the checkbox's current boolean state on every
     // save. Re-checking an already-checked box must not bump the timestamp
     // forward on every unrelated profile edit — only a real true transition
