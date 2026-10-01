@@ -5,14 +5,22 @@
 // trackable referral channel outside Google's algorithm entirely.
 // utm_source/utm_medium let Analytics attribute traffic to shares
 // specifically, once GA is configured.
-export default function WhatsAppShare({ url, text }: { url: string; text: string }) {
+export default function WhatsAppShare({
+  url,
+  text,
+  label = "Share on WhatsApp",
+}: {
+  url: string;
+  text: string;
+  label?: string;
+}) {
   const shareUrl = `${url}${url.includes("?") ? "&" : "?"}utm_source=whatsapp&utm_medium=share`;
   const message = `${text} ${shareUrl}`;
   const href = `https://wa.me/?text=${encodeURIComponent(message)}`;
 
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className="secondary btn">
-      Share on WhatsApp
+      {label}
     </a>
   );
 }

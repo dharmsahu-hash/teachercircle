@@ -20,6 +20,8 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 - **Search is Postgres, not Meilisearch.** `/api/search` and `lib/directory.ts` read `teacher_public`. Meilisearch, Redis, and MinIO containers run locally and are not imported by app code. Do not "wire them up" unless that is the task.
 - **`parent_profile` and `student_profile` are unused.** Student/parent name and phone live on `users` via `set_my_contact_info()` (`0014`).
 - **Avatars are Dicebear seeds**, rendered server-side (`lib/avatar.ts`). There is no photo upload. `components/Avatar.tsx` falls back to initials when a Google photo URL 404s.
+- **WhatsApp chat links to a teacher are built only from a revealed number.** `lib/whatsapp.ts` is used after Connect (`reveal_teacher_contact`). Never render a `wa.me/<phone>` link from public data. The public Share button (`wa.me/?text=`) carries no number.
+- **Directory summaries describe only real listings.** `lib/listingSummary.ts` builds the city/city+subject paragraph from the teachers on that page; never pad it with invented numbers.
 - **City/subject pages 404 when empty.** `lib/directory.ts` only emits slugs that have at least one listed teacher. Do not pre-generate empty landing pages.
 - **No Content-Security-Policy** in `next.config.mjs`. Inline JSON-LD and Next bootstrap scripts need nonces. Do not add a CSP that blocks them.
 - **PostgREST schema cache.** After any migration that adds a table, view, or function, run `NOTIFY pgrst, 'reload schema';`. `db/run-migrations.sh` does this. A hand-applied migration that skips it fails as a silent 404, not a migration error.

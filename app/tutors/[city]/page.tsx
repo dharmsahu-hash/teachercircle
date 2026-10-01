@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getCityPage } from "@/lib/directory";
 import { getAppBaseUrl } from "@/lib/url";
 import TeacherCard from "@/components/TeacherCard";
+import { summarizeListings } from "@/lib/listingSummary";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,8 @@ export async function generateMetadata({ params }: { params: { city: string } })
   if (!data) return { title: "City not found" };
 
   const title = `Tutors in ${data.cityName}`;
-  const description = `Find a tutor in ${data.cityName} on TeacherCircle — ${data.teachers.length} real listing${
-    data.teachers.length === 1 ? "" : "s"
-  }, real feedback from students and parents, connect directly with no agency in between.`;
+  // The page's own summary (unique per city) leads the meta description.
+  const description = `${summarizeListings(data.teachers, { place: data.cityName }).slice(0, 2).join(" ")} Connect directly on TeacherCircle, no agency in between.`;
   const url = `${getAppBaseUrl()}/tutors/${params.city}`;
 
   return {
@@ -51,10 +51,7 @@ export default async function CityTutorsPage({ params }: { params: { city: strin
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <h1>Tutors in {data.cityName}</h1>
-      <p className="hint" style={{ marginBottom: 20 }}>
-        {data.teachers.length} teacher{data.teachers.length === 1 ? "" : "s"} listed in{" "}
-        {data.cityName} — search by subject, read real feedback, and connect directly.
-      </p>
+      <p className="listing-summary">{summarizeListings(data.teachers, { place: data.cityName }).join(" ")}</p>
 
       {subjectEntries.length > 0 && (
         <div className="pills" style={{ marginBottom: 20 }}>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { pg } from "@/lib/db";
 import { SearchIcon, LocationIcon } from "@/components/icons";
 import TeacherCard from "@/components/TeacherCard";
+import InviteTeacherCard from "@/components/InviteTeacherCard";
+import { getSessionUser } from "@/lib/auth";
 import type { DirectoryTeacher } from "@/lib/directory";
 import type { Metadata } from "next";
 
@@ -48,6 +50,8 @@ export default async function SearchPage({
   const rows: DirectoryTeacher[] = (await pg(`/teacher_public?${filters.join("&")}`)) ?? [];
   const teachers = rows.slice(0, PAGE_SIZE);
   const hasNextPage = rows.length > PAGE_SIZE;
+  // Only needed for the invite card on an empty result.
+  const viewer = teachers.length === 0 ? await getSessionUser().catch(() => null) : null;
 
   function pageHref(p: number) {
     const params = new URLSearchParams();
@@ -114,7 +118,12 @@ export default async function SearchPage({
         {page === 1 && !hasNextPage ? " found" : " on this page"}
       </h2>
       {teachers.length === 0 && (
-        <p className="hint">No teachers match yet — try a different subject or city.</p>
+        <>
+          <p className="hint">No teachers match yet — try a different subject or city.</p>
+          {page === 1 && (subject || city) && (
+            <InviteTeacherCard subject={subject} city={city} inviterId={viewer?.id ?? null} />
+          )}
+        </>
       )}
       <div className="teacher-grid">
         {teachers.map((t) => (

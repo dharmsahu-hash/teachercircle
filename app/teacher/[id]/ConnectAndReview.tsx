@@ -5,6 +5,7 @@ import Link from "next/link";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import MessageThread from "@/components/MessageThread";
 import ReportBlockControls from "@/components/ReportBlockControls";
+import { inquiryMessage, whatsAppChatLink } from "@/lib/whatsapp";
 
 type Contact = { contact_email: string | null; contact_phone: string | null };
 
@@ -13,11 +14,15 @@ export default function ConnectAndReview({
   signedIn,
   role,
   userId,
+  teacherName,
+  subjects,
 }: {
   teacherId: string;
   signedIn: boolean;
   role: string | null;
   userId: string | null;
+  teacherName: string;
+  subjects: string[];
 }) {
   const [contact, setContact] = useState<Contact | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +110,15 @@ export default function ConnectAndReview({
           <b>Contact info:</b>
           <p>{contact.contact_email || "No email on file"}</p>
           <p>{contact.contact_phone || "No phone on file"}</p>
+          {/* Growth #4: built only from the number revealed by Connect. */}
+          {(() => {
+            const href = whatsAppChatLink(contact.contact_phone, inquiryMessage(teacherName, subjects));
+            return href ? (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="btn whatsapp-btn">
+                Message on WhatsApp
+              </a>
+            ) : null;
+          })()}
         </div>
       )}
       {error && <p className="error">{error}</p>}

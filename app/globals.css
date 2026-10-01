@@ -575,3 +575,10 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
   border-radius: 6px;
 }
 .blog-body blockquote p { margin: 0; }
+
+/* Directory page summary (growth #6) and empty-result invite (growth #5) */
+.listing-summary { color: var(--muted); font-size: 15px; line-height: 1.65; margin: 0 0 20px; max-width: 72ch; }
+.invite-card { border-color: var(--accent); background: var(--accent-soft); }
+.invite-card h3 { font-size: 17px; }
+.whatsapp-btn { background: #1f9d55; color: #fff; margin-top: 4px; }
+.whatsapp-btn:hover { background: #17834a; }

@@ -766,6 +766,31 @@ async function runScenarios(backend) {
     check("17b.4 sitemap.xml lists the blog and its articles", r.status === 200 && String(r.body).includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
   }
 
+  // ---------- 17c. Growth #5 / #6 ----------
+  {
+    const r = await makeClient().get("/search?subject=Sanskrit&city=Nowhereville");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check(
+      "17c.1 Empty search shows the invite card for that subject and city, with a WhatsApp share",
+      r.status === 200 && html.includes("Know a Sanskrit teacher in Nowhereville?") && html.includes("https://wa.me/?text="),
+      `got ${r.status}`
+    );
+  }
+  {
+    const r = await teacherClient.get("/search?subject=Sanskrit&city=Nowhereville");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check("17c.2 Signed in, the invite card carries the viewer's own referral link", r.status === 200 && /\/login\?ref=[0-9a-f-]{36}/.test(html), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/bengaluru");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check(
+      "17c.3 City page has a factual summary built from its real listings (count + rate)",
+      r.status === 200 && /There (is|are) \d+ teachers? listed in Bengaluru\./.test(html) && html.includes("₹"),
+      html.match(/<p class="listing-summary">[^<]*/)?.[0] ?? `got ${r.status}`
+    );
+  }
+
   // ---------- 18. G5: referral tracking ----------
   {
     const inviter = makeClient();
