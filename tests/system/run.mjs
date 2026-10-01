@@ -823,6 +823,16 @@ async function runScenarios(backend) {
     const r = await teacherClient.post("/api/teacher/profile", { pincode: "12" });
     check("19.6 Teacher profile: an invalid pincode gets a specific message", r.status === 400 && r.body?.error === "Pincode must be 6 digits", JSON.stringify(r.body));
   }
+
+  // ---------- 20. Health check (lib/health.ts) ----------
+  {
+    const r = await makeClient().get("/api/health");
+    check(
+      "20.1 GET /api/health -> 200 ok with database and auth checks, no session needed",
+      r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
+      JSON.stringify(r.body)
+    );
+  }
 }
 
 main();

@@ -71,6 +71,8 @@ Migrations are ordered and append-only. Later files replace views and functions;
 
 Pages: `/`, `/login`, `/auth/callback`, `/onboarding/role`, `/search`, `/teacher/[id]`, `/teacher/profile`, `/tutors`, `/tutors/[city]`, `/tutors/[city]/[subject]`, `/messages`, `/messages/[id]`, `/favorites`, `/account`, `/billing/subscribe`, `/admin/users`, `/admin/users/[id]`, `/admin/teachers/new`, `/admin/payments`, `/admin/reports`, `/about`, `/privacy`.
 
+`GET /api/health` (`lib/health.ts`): 200 `{"status":"ok"}` when an anonymous `teacher_public` read through PostgREST and GoTrue `/health` both succeed (3 s timeout each), otherwise 503 `degraded`. Public, so it reports only ok/ms/status codes and the short Vercel commit SHA. CI waits on it; point an uptime monitor at it.
+
 API groups: `app/api/auth/*`, `account/*`, `teacher/profile`, `search`, `connect/[teacherId]`, `conversations/*`, `reviews`, `favorites/*`, `blocks/*`, `billing/*`, `admin/*`.
 
 UI building blocks worth reusing: `Header`, `Footer`, `TeacherCard`, `Avatar`, `FavoriteButton`, `MessageThread`, `ReportBlockControls`, `WhatsAppShare`, `InviteLink`, `GoogleAnalytics`, `AdSense`. "Reviews" in the database is labeled **Feedback** in the UI. Profanity filtering (`lib/profanity.ts`) is a word list (English + Hinglish), enforced in `POST /api/reviews`, bypassable by spelling.
@@ -131,7 +133,7 @@ Local: `.env.example` (`DB_PASSWORD`, `JWT_SECRET`, Google client, `UPI_PAYEE_*`
 From `docs/05` and `docs/07`, still true as of this review:
 
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
-- Optional: one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
+- Optional: one response envelope, structured logs.
 - No CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
 
 ## Doc index

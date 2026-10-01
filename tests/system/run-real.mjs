@@ -392,6 +392,16 @@ async function main() {
     check("13.12 Claimed teacher is still listed in search under the new id", r.status === 200 && r.body.some((t) => t.user_id === claimedId), JSON.stringify(r.body?.map?.((t) => t.user_id)));
   }
 
+  // ---------- 14. Health check against the real services ----------
+  {
+    const r = await makeClient().get("/api/health");
+    check(
+      "14.1 GET /api/health -> 200 ok against real PostgREST + GoTrue",
+      r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
+      JSON.stringify(r.body)
+    );
+  }
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length} checks, ${results.length - failed.length} passed, ${failed.length} failed.`);
   if (failed.length) {

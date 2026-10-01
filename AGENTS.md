@@ -49,6 +49,7 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 | Search API | `app/api/search/route.ts` against `teacher_public` |
 | Billing math | `lib/entitlement.ts`, `lib/upi.ts`; enforcement flag stays in the database |
 | Blog article | new file in `content/blog/` (copy an existing one), register it in `content/blog/index.ts`; `tests/unit/blog.test.ts` checks slug, date, description length and internal links |
+| Uptime / dependency check | `lib/health.ts` behind `GET /api/health`; keep it free of error text and config |
 | Copy that says Feedback | UI word is Feedback, table is still `review` |
 
 ## Commands
