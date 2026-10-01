@@ -401,3 +401,23 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 
 .report-block-row { margin-top: 10px; }
 .report-block-row button { font-size: 13px; padding: 6px 12px; }
+
+/* Blog (G6) */
+.blog-list { display: flex; flex-direction: column; gap: 14px; }
+.blog-card h2 { font-size: 20px; margin-bottom: 0; }
+.blog-card h2 a { text-decoration: none; }
+.blog-card h2 a:hover { text-decoration: underline; }
+.blog-article { max-width: 720px; }
+.blog-body { line-height: 1.7; font-size: 16px; }
+.blog-body h2 { margin-top: 32px; font-size: 22px; }
+.blog-body h3 { margin-top: 24px; font-size: 18px; }
+.blog-body ul, .blog-body ol { padding-left: 22px; }
+.blog-body li { margin-bottom: 6px; }
+.blog-body blockquote {
+  margin: 24px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+.blog-body blockquote p { margin: 0; }

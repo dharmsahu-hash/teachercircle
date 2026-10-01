@@ -47,6 +47,7 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 | Public directory / SEO slugs | `lib/directory.ts`, `app/tutors/**`, `app/sitemap.ts` |
 | Search API | `app/api/search/route.ts` against `teacher_public` |
 | Billing math | `lib/entitlement.ts`, `lib/upi.ts`; enforcement flag stays in the database |
+| Blog article | new file in `content/blog/` (copy an existing one), register it in `content/blog/index.ts`; `tests/unit/blog.test.ts` checks slug, date, description length and internal links |
 | Copy that says Feedback | UI word is Feedback, table is still `review` |
 
 ## Commands
@@ -63,6 +64,6 @@ npm run build
 
 ## Open gaps (do not treat as accidental omissions)
 
-No zod. No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No blog (growth item G6). No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
+No zod. No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
 
 Detail and the bug history: `docs/ai/CONTEXT.md`, `README.md`, `docs/04-test-report.md`, `docs/05-architecture-review.md`.

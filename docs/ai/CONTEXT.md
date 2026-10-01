@@ -75,6 +75,8 @@ API groups: `app/api/auth/*`, `account/*`, `teacher/profile`, `search`, `connect
 
 UI building blocks worth reusing: `Header`, `Footer`, `TeacherCard`, `Avatar`, `FavoriteButton`, `MessageThread`, `ReportBlockControls`, `WhatsAppShare`, `InviteLink`, `GoogleAnalytics`, `AdSense`. "Reviews" in the database is labeled **Feedback** in the UI. Profanity filtering (`lib/profanity.ts`) is a word list (English + Hinglish), enforced in `POST /api/reviews`, bypassable by spelling.
 
+Blog (G6): `/blog` and `/blog/[slug]`. Articles are TypeScript modules in `content/blog/` (Markdown body), registered in `content/blog/index.ts`, rendered by the escape-first `renderMarkdown` in `lib/blog.ts`; no new dependency, nothing read from disk at runtime. Each article has Article JSON-LD, a canonical URL, a sitemap entry and related links into the directory.
+
 SEO: `app/sitemap.ts`, `app/robots.ts`, per-teacher metadata and schema.org JSON-LD. Landing pages are generated only for city/subject pairs that have a real listed teacher. Search Console verification is the env var `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`. GA and AdSense render nothing until their public env vars are set. `app/ads.txt/route.ts` depends on the AdSense client id.
 
 ## Domain rules that look like bugs and are not
@@ -130,7 +132,6 @@ From `docs/05` and `docs/07`, still true as of this review:
 
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
 - Optional: zod on request bodies, one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
-- G6 blog/content is not started. It needs writing, not a new table.
 - No CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
 
 ## Doc index
@@ -144,5 +145,5 @@ From `docs/05` and `docs/07`, still true as of this review:
 | `docs/04-test-report.md` | What was verified, including production |
 | `docs/05-architecture-review.md` | Findings; some rows are done |
 | `docs/06-review-2026-09-20.md` | P0–P3 security/product pass |
-| `docs/07-growth-review-2026-09-20.md` | G1–G5 shipped, G6 open |
+| `docs/07-growth-review-2026-09-20.md` | G1–G6 shipped (G6 blog on 2026-10-01) |
 | `AGENTS.md` | Rules to follow while editing |

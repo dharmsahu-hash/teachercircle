@@ -742,6 +742,30 @@ async function runScenarios(backend) {
     check("17.6 Teacher profile includes a WhatsApp share link", r.status === 200 && String(r.body).includes("wa.me"), `got ${r.status}`);
   }
 
+  // ---------- 17b. G6: blog ----------
+  {
+    const r = await teacherClient.get("/blog");
+    const html = String(r.body);
+    check("17b.1 GET /blog -> 200 and links to every article", r.status === 200 && html.includes("/blog/choose-maths-tutor-cbse-class-10") && html.includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/blog/choose-maths-tutor-cbse-class-10");
+    const html = String(r.body);
+    check(
+      "17b.2 Article page -> 200 with its title, Article JSON-LD, canonical URL and a link into the directory",
+      r.status === 200 && html.includes("How to choose a Maths tutor") && html.includes('"@type":"Article"') && html.includes('rel="canonical"') && html.includes('href="/search?subject=Maths"'),
+      `got ${r.status}`
+    );
+  }
+  {
+    const r = await teacherClient.get("/blog/no-such-article");
+    check("17b.3 Unknown article slug -> 404", r.status === 404, `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/sitemap.xml");
+    check("17b.4 sitemap.xml lists the blog and its articles", r.status === 200 && String(r.body).includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
+  }
+
   // ---------- 18. G5: referral tracking ----------
   {
     const inviter = makeClient();
