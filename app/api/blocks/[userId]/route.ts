@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg } from "@/lib/db";
+import { invalidIdResponse, isId } from "@/lib/validation";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { userId: string } }) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isId(params.userId)) return invalidIdResponse();
 
   await pg(`/blocked_user?blocker_id=eq.${user.id}&blocked_id=eq.${params.userId}`, {
     method: "DELETE",

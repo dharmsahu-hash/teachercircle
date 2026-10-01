@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { getAppBaseUrl } from "@/lib/url";
 import { pg } from "@/lib/db";
 import { getDirectory } from "@/lib/directory";
+import { getAllPosts } from "@/lib/blog";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getAppBaseUrl();
@@ -43,5 +44,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes];
+  // G6: the blog index and every article.
+  const blogRoutes: MetadataRoute.Sitemap = [
+    { url: `${base}/blog`, changeFrequency: "weekly", priority: 0.5 },
+    ...getAllPosts().map((p) => ({
+      url: `${base}/blog/${p.slug}`,
+      lastModified: p.updated ?? p.date,
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    })),
+  ];
+
+  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...blogRoutes];
 }

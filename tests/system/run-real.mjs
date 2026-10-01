@@ -319,6 +319,89 @@ async function main() {
     check("12.4 Admin-added teacher appears in real search immediately", r.status === 200 && r.body.some((t) => t.user_id === addedTeacherId), JSON.stringify(r.body));
   }
 
+  // ---------- 13. Claim your listing (0026_claim_listing.sql) ----------
+  // An admin-added listing becomes the teacher's own account when they sign
+  // up with the same, verified email — re-keyed in place, so feedback and
+  // contact requests made before the claim stay attached to it.
+  const claimEmail = `claim-me-${RUN_ID}@realtier3.local`;
+  let listingId = null;
+  {
+    const r = await adminClient.post("/api/admin/teachers", {
+      email: claimEmail, name: "Claimable Teacher", city: "Indore", subjects: "History", rate_per_hour: 300,
+    });
+    listingId = r.body?.userId;
+    check("13.1 Admin adds a listing to be claimed", r.status === 200 && !!listingId, JSON.stringify(r.body));
+  }
+  {
+    const unclaimed = psql(`select count(*) from users u where u.id = '${listingId}' and not exists (select 1 from auth.users a where a.id = u.id);`);
+    check("13.2 Listing starts unclaimed (no auth.users row behind it)", unclaimed === "1", `count=${unclaimed}`);
+  }
+  {
+    await studentClient.post(`/api/connect/${listingId}`, {});
+    const r = await studentClient.post("/api/reviews", { teacherId: listingId, rating: 4, comment: "Helpful before signing up" });
+    check("13.3 A student connects and leaves feedback on the unclaimed listing", r.status === 200 || r.status === 201, JSON.stringify(r.body));
+  }
+
+  // Security: an unverified account with the listing's email must NOT claim
+  // it. Simulated with a raw auth.users row (local GoTrue autoconfirms), then
+  // verifying it shows the claim happens exactly at verification.
+  const unverifiedEmail = `unverified-${RUN_ID}@realtier3.local`;
+  {
+    const r = await adminClient.post("/api/admin/teachers", { email: unverifiedEmail, name: "Unverified Case" });
+    const placeholderId = r.body?.userId;
+    const authId = psql(`insert into auth.users (id, email, aud, role) values (gen_random_uuid(), '${unverifiedEmail}', 'authenticated', 'authenticated') returning id;`).split("\n")[0];
+    const stillPlaceholder = psql(`select count(*) from users where id = '${placeholderId}';`);
+    check("13.4 SECURITY: an unverified signup with the listing's email does NOT take it over", stillPlaceholder === "1", `placeholder rows=${stillPlaceholder}`);
+    psql(`update auth.users set email_confirmed_at = now() where id = '${authId}';`);
+    const movedTo = psql(`select count(*) from teacher_profile where user_id = '${authId}';`);
+    check("13.5 The same account claims the listing the moment its email is verified", movedTo === "1", `profiles under auth id=${movedTo}`);
+    // The claim's audit row references this user (actor_id has no ON DELETE
+    // CASCADE, on purpose), so it goes first.
+    psql(`delete from admin_audit_log where actor_id = '${authId}' or target_id = '${authId}'; delete from users where id = '${authId}'; delete from auth.users where id = '${authId}';`);
+  }
+
+  const claimer = makeClient();
+  {
+    const r = await claimer.post("/api/auth/signup", { email: claimEmail, password: "pw123456" });
+    check("13.6 Teacher signs up with the listing's email -> 200 and a real session", r.status === 200 && !!claimer.userId(), JSON.stringify(r.body));
+  }
+  const claimedId = claimer.userId();
+  {
+    const r = await claimer.get("/api/teacher/profile");
+    check("13.7 Signed-in teacher sees the admin-created listing as their own profile", r.status === 200 && r.body?.name === "Claimable Teacher" && r.body?.city === "Indore", JSON.stringify(r.body));
+  }
+  {
+    const r = await claimer.post("/api/auth/role", { role: "student" });
+    check("13.8 Role is already teacher (no onboarding, role cannot be switched)", r.status === 400, `got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+  {
+    const reviews = psql(`select count(*) from review where teacher_id = '${claimedId}';`);
+    const contacts = psql(`select count(*) from contact_request where teacher_id = '${claimedId}';`);
+    check("13.9 Feedback and contact requests from before the claim moved with the listing", reviews === "1" && Number(contacts) >= 1, `reviews=${reviews}, contacts=${contacts}`);
+  }
+  {
+    const oldRows = psql(`select count(*) from users where id = '${listingId}';`);
+    check("13.10 The old placeholder id no longer exists (re-keyed, not duplicated)", oldRows === "0", `rows=${oldRows}`);
+  }
+  {
+    const audit = psql(`select string_agg(action, ',' order by created_at) from admin_audit_log where target_id = '${claimedId}';`);
+    check("13.11 Audit log keeps the admin's create and records the claim", audit === "create,claim", `actions=${audit}`);
+  }
+  {
+    const r = await studentClient.get("/api/search?subject=History");
+    check("13.12 Claimed teacher is still listed in search under the new id", r.status === 200 && r.body.some((t) => t.user_id === claimedId), JSON.stringify(r.body?.map?.((t) => t.user_id)));
+  }
+
+  // ---------- 14. Health check against the real services ----------
+  {
+    const r = await makeClient().get("/api/health");
+    check(
+      "14.1 GET /api/health -> 200 ok against real PostgREST + GoTrue",
+      r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
+      JSON.stringify(r.body)
+    );
+  }
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length} checks, ${results.length - failed.length} passed, ${failed.length} failed.`);
   if (failed.length) {

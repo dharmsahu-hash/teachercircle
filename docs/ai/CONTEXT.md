@@ -63,16 +63,21 @@ Migrations are ordered and append-only. Later files replace views and functions;
 | Restore lists again | `admin_restore_profile` sets `is_listed` | `0023` |
 | Favorites | `favorite_teacher` | `0024` |
 | Referrals | `users.referred_by`, `set_referred_by`, `get_referral_count` | `0025` |
+| Claim listing | `claim_unclaimed_listing`, `on_auth_user_email_confirmed` trigger, `admin_unclaimed_user_ids`; FKs to user-keyed tables made `ON UPDATE CASCADE`; audit action `claim` | `0026` |
 
-`handle_new_user` is redefined in `0001`, `0009`, `0010`, and `0011`. The live body is the `0011` version.
+`handle_new_user` is redefined in `0001`, `0009`, `0010`, `0011`, and `0026`. The live body is the `0026` version.
 
 ## App surface
 
 Pages: `/`, `/login`, `/auth/callback`, `/onboarding/role`, `/search`, `/teacher/[id]`, `/teacher/profile`, `/tutors`, `/tutors/[city]`, `/tutors/[city]/[subject]`, `/messages`, `/messages/[id]`, `/favorites`, `/account`, `/billing/subscribe`, `/admin/users`, `/admin/users/[id]`, `/admin/teachers/new`, `/admin/payments`, `/admin/reports`, `/about`, `/privacy`.
 
+`GET /api/health` (`lib/health.ts`): 200 `{"status":"ok"}` when an anonymous `teacher_public` read through PostgREST and GoTrue `/health` both succeed (3 s timeout each), otherwise 503 `degraded`. Public, so it reports only ok/ms/status codes and the short Vercel commit SHA. CI waits on it; point an uptime monitor at it.
+
 API groups: `app/api/auth/*`, `account/*`, `teacher/profile`, `search`, `connect/[teacherId]`, `conversations/*`, `reviews`, `favorites/*`, `blocks/*`, `billing/*`, `admin/*`.
 
 UI building blocks worth reusing: `Header`, `Footer`, `TeacherCard`, `Avatar`, `FavoriteButton`, `MessageThread`, `ReportBlockControls`, `WhatsAppShare`, `InviteLink`, `GoogleAnalytics`, `AdSense`. "Reviews" in the database is labeled **Feedback** in the UI. Profanity filtering (`lib/profanity.ts`) is a word list (English + Hinglish), enforced in `POST /api/reviews`, bypassable by spelling.
+
+Blog (G6): `/blog` and `/blog/[slug]`. Articles are TypeScript modules in `content/blog/` (Markdown body), registered in `content/blog/index.ts`, rendered by the escape-first `renderMarkdown` in `lib/blog.ts`; no new dependency, nothing read from disk at runtime. Each article has Article JSON-LD, a canonical URL, a sitemap entry and related links into the directory.
 
 SEO: `app/sitemap.ts`, `app/robots.ts`, per-teacher metadata and schema.org JSON-LD. Landing pages are generated only for city/subject pairs that have a real listed teacher. Search Console verification is the env var `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`. GA and AdSense render nothing until their public env vars are set. `app/ads.txt/route.ts` depends on the AdSense client id.
 
@@ -82,7 +87,7 @@ SEO: `app/sitemap.ts`, `app/robots.ts`, per-teacher metadata and schema.org JSON
 - Search does not use the Meilisearch container.
 - Student and parent profiles are not the `student_profile` / `parent_profile` tables.
 - Generated avatars replaced MinIO photo upload.
-- An admin-created teacher and a later real signup with the same email stay unlinked.
+- An admin-created teacher is linked to a later signup with the same email only once that email is verified. Until then the auth user has no `users` row and is not signed in as far as the app is concerned. Admin pages show such listings as "Not claimed yet".
 - Response time is hidden below 3 replied conversations.
 - Self-attested badge is a declaration, not a background check.
 - Block is mutual: either side blocking silences the thread for both. Unblock is shown only when `blocked_by_me` is true.
@@ -128,9 +133,8 @@ Local: `.env.example` (`DB_PASSWORD`, `JWT_SECRET`, Google client, `UPI_PAYEE_*`
 From `docs/05` and `docs/07`, still true as of this review:
 
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
-- Optional: zod on request bodies, one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
-- G6 blog/content is not started. It needs writing, not a new table.
-- No claim-listing flow, no CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
+- Optional: one response envelope, structured logs.
+- No CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).
 
 ## Doc index
 
@@ -143,5 +147,5 @@ From `docs/05` and `docs/07`, still true as of this review:
 | `docs/04-test-report.md` | What was verified, including production |
 | `docs/05-architecture-review.md` | Findings; some rows are done |
 | `docs/06-review-2026-09-20.md` | P0–P3 security/product pass |
-| `docs/07-growth-review-2026-09-20.md` | G1–G5 shipped, G6 open |
+| `docs/07-growth-review-2026-09-20.md` | G1–G6 shipped (G6 blog on 2026-10-01) |
 | `AGENTS.md` | Rules to follow while editing |

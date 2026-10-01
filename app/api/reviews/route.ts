@@ -3,15 +3,15 @@ import { requireSession } from "@/lib/auth";
 import { pg, publicErrorMessage } from "@/lib/db";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { parseJsonBody, reviewSchema } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const { teacherId, rating, comment } = await req.json();
-  if (!teacherId || !rating) {
-    return NextResponse.json({ error: "teacherId and rating are required" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(req, reviewSchema);
+  if (!parsed.ok) return parsed.response;
+  const { teacherId, rating, comment } = parsed.data;
   if (comment && containsAbusiveLanguage(comment)) {
     return NextResponse.json({ error: ABUSIVE_LANGUAGE_ERROR }, { status: 400 });
   }

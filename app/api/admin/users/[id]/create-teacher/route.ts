@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
+import { adminCreateTeacherSchema, invalidIdResponse, isId, parseJsonBody } from "@/lib/validation";
 
 // FR-21: admin can create a profile on behalf of an already-registered user
 // who hasn't completed onboarding. Deliberately does NOT create a login
@@ -9,8 +10,11 @@ import { pgRpc, publicErrorMessage } from "@/lib/db";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  if (!isId(params.id)) return invalidIdResponse();
 
-  const { name, city } = await req.json();
+  const parsed = await parseJsonBody(req, adminCreateTeacherSchema);
+  if (!parsed.ok) return parsed.response;
+  const { name, city } = parsed.data;
   try {
     await pgRpc(
       "admin_create_teacher_profile",

@@ -21,8 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          # Nothing in this workflow pushes; don't leave a token on disk.
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           # Node 24+: unit tests use mock.module({ exports }) and
           # --experimental-strip-types.
@@ -41,8 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -56,18 +61,25 @@ jobs:
             -e "s/^MINIO_ROOT_PASSWORD=$/MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)/" \
             .env
 
-      # MinIO is not used by app code (AGENTS.md) and its image is no longer
-      # publicly pullable, so it is left out.
-      - name: Start stack
-        run: docker compose up -d --build postgres postgrest gotrue meilisearch redis app
-
-      - name: Wait for postgres, then bootstrap
+      # Postgres first, on its own. On a fresh volume the supabase/postgres
+      # entrypoint sometimes exits once ("Peer authentication failed") and is
+      # restarted by `restart: unless-stopped`; a single `up` of the whole
+      # stack sees that exit through depends_on and fails the job. Waiting here
+      # tolerates the restart.
+      - name: Start postgres, wait until healthy, bootstrap
         run: |
-          for i in $(seq 1 60); do
+          docker compose up -d postgres
+          for i in $(seq 1 90); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q postgres)")" = healthy ] && break
             sleep 2
           done
+          docker inspect -f 'postgres: {{.State.Health.Status}}, restarts {{.RestartCount}}' "$(docker compose ps -q postgres)"
           sh db/bootstrap.sh
+
+      # MinIO is not used by app code (AGENTS.md) and its image is no longer
+      # publicly pullable, so it is left out.
+      - name: Start the rest of the stack
+        run: docker compose up -d --build postgrest gotrue meilisearch redis app
 
       # GoTrue crash-loops until bootstrap has run, then recovers on its own.
       - name: Wait for gotrue, then migrate and seed
@@ -79,13 +91,15 @@ jobs:
           sh db/run-migrations.sh
           docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U teachercircle -d postgres < db/seed.sql
 
+      # /api/health returns 200 only once the app can reach both PostgREST
+      # and GoTrue, so this also waits out PostgREST's schema reload.
       - name: Wait for the app
         run: |
           for i in $(seq 1 60); do
-            curl -sf -o /dev/null http://localhost:3000/ && exit 0
+            curl -sf -o /dev/null http://localhost:3000/api/health && exit 0
             sleep 2
           done
-          echo "app did not come up"; exit 1
+          echo "app did not become healthy"; curl -s http://localhost:3000/api/health; exit 1
 
       - run: npm run test:system:real
 

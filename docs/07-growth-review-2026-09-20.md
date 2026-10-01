@@ -108,7 +108,12 @@ leverage in principle — a referral mechanism with 14 teachers is much less
 valuable than the same mechanism once G1's SEO pages start pulling in real search
 traffic to convert.
 
-### G6 — ⬜ Still open — Blog / content pages (lower priority for this stage)
+### G6 — ✅ Shipped 2026-10-01 — Blog / content pages
+
+> `/blog` and `/blog/[slug]` with three starter articles (choosing a Class 10 Maths
+> tutor, home tutor vs coaching centre, getting more students as a tutor). Articles
+> live in `content/blog/` and are listed in the sitemap. Writing new articles
+> regularly is what makes this pay off.
 
 Evergreen articles ("How to choose a Maths tutor for CBSE Class 10 boards",
 "Tutor vs. coaching center: what's actually different") drive long-tail search

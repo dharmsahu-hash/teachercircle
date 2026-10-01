@@ -742,6 +742,30 @@ async function runScenarios(backend) {
     check("17.6 Teacher profile includes a WhatsApp share link", r.status === 200 && String(r.body).includes("wa.me"), `got ${r.status}`);
   }
 
+  // ---------- 17b. G6: blog ----------
+  {
+    const r = await teacherClient.get("/blog");
+    const html = String(r.body);
+    check("17b.1 GET /blog -> 200 and links to every article", r.status === 200 && html.includes("/blog/choose-maths-tutor-cbse-class-10") && html.includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/blog/choose-maths-tutor-cbse-class-10");
+    const html = String(r.body);
+    check(
+      "17b.2 Article page -> 200 with its title, Article JSON-LD, canonical URL and a link into the directory",
+      r.status === 200 && html.includes("How to choose a Maths tutor") && html.includes('"@type":"Article"') && html.includes('rel="canonical"') && html.includes('href="/search?subject=Maths"'),
+      `got ${r.status}`
+    );
+  }
+  {
+    const r = await teacherClient.get("/blog/no-such-article");
+    check("17b.3 Unknown article slug -> 404", r.status === 404, `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/sitemap.xml");
+    check("17b.4 sitemap.xml lists the blog and its articles", r.status === 200 && String(r.body).includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
+  }
+
   // ---------- 18. G5: referral tracking ----------
   {
     const inviter = makeClient();
@@ -771,6 +795,43 @@ async function runScenarios(backend) {
     await selfReferrer.post("/api/auth/role", { role: "teacher", ref: ownId });
     const user = [...backend.db.users.values()].find((u) => u.email === "self-referrer@test.local");
     check("18.4 SECURITY: a self-referral is silently rejected, not recorded", user?.referred_by == null, JSON.stringify(user));
+  }
+
+  // ---------- 19. Input validation (lib/validation.ts) ----------
+  {
+    const res = await fetch(BASE + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{not json" });
+    const body = await res.json().catch(() => null);
+    check("19.1 Malformed JSON -> 400 with a readable message (used to be a 500)", res.status === 400 && body?.error === "Request body must be valid JSON.", `got ${res.status} ${JSON.stringify(body)}`);
+  }
+  {
+    const r = await studentClient.post("/api/reviews", { teacherId: meeraId, rating: 9 });
+    check("19.2 Out-of-range rating is rejected before reaching the database", r.status === 400 && r.body?.error === "Rating must be 1 to 5", JSON.stringify(r.body));
+  }
+  {
+    const r = await studentClient.del(`/api/favorites/${encodeURIComponent(`${meeraId}&teacher_id=neq.x`)}`);
+    check("19.3 SECURITY: an id carrying extra PostgREST filters is rejected, not interpolated", r.status === 400 && r.body?.error === "Invalid id", `got ${r.status} ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await studentClient.post("/api/conversations", { teacherId: { not: "a string" } });
+    check("19.4 A non-string id in the body -> 400", r.status === 400, `got ${r.status}`);
+  }
+  {
+    const r = await adminClient.post(`/api/admin/users/${meeraId}/update`, { name: "Meera R.", user_id: "someone-else" });
+    check("19.5 Admin profile update rejects keys outside the allow-list", r.status === 400, `got ${r.status} ${JSON.stringify(r.body)}`);
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { pincode: "12" });
+    check("19.6 Teacher profile: an invalid pincode gets a specific message", r.status === 400 && r.body?.error === "Pincode must be 6 digits", JSON.stringify(r.body));
+  }
+
+  // ---------- 20. Health check (lib/health.ts) ----------
+  {
+    const r = await makeClient().get("/api/health");
+    check(
+      "20.1 GET /api/health -> 200 ok with database and auth checks, no session needed",
+      r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
+      JSON.stringify(r.body)
+    );
   }
 }
 

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
+import { adminAddTeacherSchema, parseJsonBody } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin().catch(() => null);
   if (!admin) return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
-  const body = await req.json();
-  if (!body.email || !body.name) {
-    return NextResponse.json({ error: "email and name are required" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(req, adminAddTeacherSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   try {
     const subjects =
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
         p_subjects: subjects,
         p_rate_per_hour: body.rate_per_hour ? Number(body.rate_per_hour) : null,
         p_experience_years: body.experience_years ? Number(body.experience_years) : null,
-        p_contact_email: body.contact_email ?? body.email,
+        p_contact_email: body.contact_email || body.email,
         p_contact_phone: body.contact_phone ?? null,
       },
       admin.token

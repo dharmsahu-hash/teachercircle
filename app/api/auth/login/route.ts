@@ -3,12 +3,12 @@ import { signInWithPassword, GoTrueError } from "@/lib/gotrue";
 import { publicErrorMessage } from "@/lib/db";
 import { setSessionCookie } from "@/lib/session";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { loginSchema, parseJsonBody } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
-  const { email, password } = await req.json();
-  if (!email || !password) {
-    return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(req, loginSchema);
+  if (!parsed.ok) return parsed.response;
+  const { email, password } = parsed.data;
 
   // 10 attempts / 5 min per IP — generous enough for a real user who mistypes
   // a password a few times, tight enough to blunt casual brute-forcing.

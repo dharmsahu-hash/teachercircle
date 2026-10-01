@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, PostgrestError } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { invalidIdResponse, isId, parseJsonBody, reportSchema } from "@/lib/validation";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await requireSession().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isId(params.id)) return invalidIdResponse();
 
-  const { reason } = await req.json().catch(() => ({}));
-  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  const parsed = await parseJsonBody(req, reportSchema);
+  if (!parsed.ok) return parsed.response;
+  const trimmed = parsed.data.reason.trim();
   if (!trimmed) return NextResponse.json({ error: "Please describe the issue" }, { status: 400 });
 
   // 5 / hour per user — reports are rare in normal use; this just stops

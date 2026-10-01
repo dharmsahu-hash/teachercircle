@@ -26,6 +26,7 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 - **Skip `0000_bootstrap.sql` on Supabase.** It only patches a plain Postgres image (roles, `auth.uid()`, `auth.users` sync). Supabase already has those.
 - **Kong requires `apikey`.** Production sets `SUPABASE_API_KEY`. `lib/db.ts` and `lib/gotrue.ts` send it. Local PostgREST has no gateway, so the header is omitted when the env var is unset.
 - **Never send raw error text to the client.** Route `catch` blocks return `publicErrorMessage(err, "<route fallback>")` from `lib/db.ts`. It shows only the `raise exception` texts listed in `USER_FACING_DB_MESSAGES` (as friendly copy) and logs everything else server-side. A new `raise exception` meant for users must be added to that map. Login/signup may show a `GoTrueError` message (GoTrue's own user-facing text) but nothing else.
+- **Validate every request with `lib/validation.ts`.** Routes read bodies only through `parseJsonBody(req, schema)` (zod) and check every id from the URL with `isId()` before it goes near a PostgREST filter: ids are interpolated into URLs like `user_id=eq.${id}`. Schemas cover shape and size; business rules (password strength, profanity, phone format) stay where they are. A new route gets a schema in `lib/validation.ts`.
 - **CI must stay green on `stage`.** `.github/workflows/ci.yml` runs tsc, unit, build, Tier 2, then Tier 3 against the real Docker stack (without MinIO) on every push/PR to `stage` and `main`. Unit tests need Node 24+.
 - **Email failures must not fail the user action.** `lib/email.ts` no-ops without `BREVO_API_KEY`. Message send succeeds even if the notification does not.
 - **Signup `redirect_to` is a query parameter.** `signUpWithPassword` calls `POST /signup?redirect_to=<app>/auth/callback`. GoTrue ignores `redirect_to` inside the JSON body. `getAppBaseUrl()` must not be `localhost` for that link: a missing or local `APP_HOSTNAME` is ignored when the request host or `VERCEL_PROJECT_PRODUCTION_URL` is public. Supabase Authentication → URL Configuration must use the same public Site URL, or GoTrue replaces the link with Site URL.
@@ -35,7 +36,7 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 - **Rate limits** (`0021`, `lib/rateLimit.ts`): login 10/5min/IP, signup 5/hour/IP, messages 30/10min/user, reviews 10/hour/user, reports 5/hour/user. There is no Redis limiter.
 - **Response-time label** needs at least 3 replied conversations (`lib/responseTime.ts`). Fewer than that shows nothing.
 - **Self-attestation is not verification.** `teacher_profile.self_attested_at` is a checkbox, and the UI must keep saying so.
-- **Admin-added teachers are not claimable.** `admin_add_teacher` creates a listing with no login. A later signup with the same email no longer crashes (`ON CONFLICT (email)`) but does not link the listing.
+- **Admin-added listings are claimed only by a verified email** (`0026`). `admin_add_teacher` creates a `users` row with no `auth.users` row behind it ("unclaimed"). When an auth user with the same email becomes verified (insert with `email_confirmed_at`, or the `on_auth_user_email_confirmed` update trigger), `claim_unclaimed_listing()` re-keys that row's id to the auth id. Never claim on an unverified signup: that would let anyone take over a listing. Re-keying relies on every FK to `users`, `teacher_profile`, `parent_profile` and `student_profile` being `ON UPDATE CASCADE`; a new FK to those tables must be too.
 
 ## Where to change things
 
@@ -47,6 +48,8 @@ Stack: Next.js 14 App Router, TypeScript, no ORM. The app talks to Postgres only
 | Public directory / SEO slugs | `lib/directory.ts`, `app/tutors/**`, `app/sitemap.ts` |
 | Search API | `app/api/search/route.ts` against `teacher_public` |
 | Billing math | `lib/entitlement.ts`, `lib/upi.ts`; enforcement flag stays in the database |
+| Blog article | new file in `content/blog/` (copy an existing one), register it in `content/blog/index.ts`; `tests/unit/blog.test.ts` checks slug, date, description length and internal links |
+| Uptime / dependency check | `lib/health.ts` behind `GET /api/health`; keep it free of error text and config |
 | Copy that says Feedback | UI word is Feedback, table is still `review` |
 
 ## Commands
@@ -63,6 +66,6 @@ npm run build
 
 ## Open gaps (do not treat as accidental omissions)
 
-No zod. No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No "claim this listing" flow. No blog (growth item G6). No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
+No CSP. Local GoTrue autoconfirm is on. JWTs are not revocable before expiry. No Meilisearch, Redis cache, MinIO upload, or payment gateway. `eslint.ignoreDuringBuilds` is true.
 
 Detail and the bug history: `docs/ai/CONTEXT.md`, `README.md`, `docs/04-test-report.md`, `docs/05-architecture-review.md`.
