@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MonitorIcon, MoonIcon, SunIcon } from "./icons";
 
 type Theme = "light" | "dark" | "system";
 
@@ -40,11 +41,18 @@ export default function ThemeToggle() {
     }
   }
 
-  const label = theme === "system" ? "Theme: Auto" : theme === "light" ? "Theme: Light" : "Theme: Dark";
+  const label = theme === "system" ? "Auto" : theme === "light" ? "Light" : "Dark";
+  const Icon = theme === "system" ? MonitorIcon : theme === "light" ? SunIcon : MoonIcon;
 
   return (
-    <button type="button" className="secondary nav-item" onClick={cycle} title="Cycle theme: Auto → Light → Dark">
-      {label}
+    <button
+      type="button"
+      className="icon-button"
+      onClick={cycle}
+      aria-label={`Theme: ${label}. Click to change.`}
+      title={`Theme: ${label} (Auto → Light → Dark)`}
+    >
+      <Icon />
     </button>
   );
 }

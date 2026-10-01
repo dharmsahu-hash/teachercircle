@@ -2,6 +2,13 @@ import Link from "next/link";
 import { pg } from "@/lib/db";
 import { SearchIcon, LocationIcon } from "@/components/icons";
 import TeacherCard from "@/components/TeacherCard";
+import InviteTeacherCard from "@/components/InviteTeacherCard";
+import { getSessionUser } from "@/lib/auth";
+import { CLASSES, EXAMS, EXAM_CODES } from "@/lib/levels";
+
+// Numbers only for price/rating filters; anything else is ignored rather
+// than passed to PostgREST.
+const num = (v?: string) => (v && /^d+(.d+)?$/.test(v.trim()) ? v.trim() : undefined);
 import type { DirectoryTeacher } from "@/lib/directory";
 import type { Metadata } from "next";
 
@@ -19,13 +26,27 @@ const PAGE_SIZE = 12;
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: { subject?: string; city?: string; minPrice?: string; maxPrice?: string; minRating?: string; page?: string };
+  searchParams: {
+    subject?: string;
+    city?: string;
+    minPrice?: string;
+    maxPrice?: string;
+    minRating?: string;
+    mode?: string;
+    cls?: string;
+    exam?: string;
+    page?: string;
+  };
 }) {
   const subject = searchParams.subject?.trim();
   const city = searchParams.city?.trim();
-  const minPrice = searchParams.minPrice?.trim();
-  const maxPrice = searchParams.maxPrice?.trim();
-  const minRating = searchParams.minRating?.trim();
+  const minPrice = num(searchParams.minPrice);
+  const maxPrice = num(searchParams.maxPrice);
+  const minRating = num(searchParams.minRating);
+  // Growth #2 / #3 filters: only values from the fixed vocabulary.
+  const mode = searchParams.mode === "online" || searchParams.mode === "home" ? searchParams.mode : undefined;
+  const cls = (CLASSES as readonly string[]).includes(searchParams.cls ?? "") ? searchParams.cls : undefined;
+  const exam = EXAM_CODES.includes(searchParams.exam ?? "") ? searchParams.exam : undefined;
   const page = Math.max(1, Number(searchParams.page) || 1);
 
   const filters: string[] = [];
@@ -34,9 +55,13 @@ export default async function SearchPage({
   if (minPrice) filters.push(`rate_per_hour=gte.${encodeURIComponent(minPrice)}`);
   if (maxPrice) filters.push(`rate_per_hour=lte.${encodeURIComponent(maxPrice)}`);
   if (minRating) filters.push(`avg_rating=gte.${encodeURIComponent(minRating)}`);
+  if (mode === "online") filters.push("teaching_mode=in.(online,both)");
+  if (mode === "home") filters.push("teaching_mode=in.(home,both)");
+  if (cls) filters.push(`classes=cs.%7B${cls}%7D`);
+  if (exam) filters.push(`exams=cs.%7B${exam}%7D`);
   filters.push("order=avg_rating.desc,review_count.desc");
   filters.push(
-    "select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count"
+    "select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count,teaching_mode,classes,boards,exams"
   );
   // Fetch one extra row to know whether a next page exists, without needing
   // a separate exact-count query (Prefer: count=exact) or protocol changes
@@ -48,6 +73,8 @@ export default async function SearchPage({
   const rows: DirectoryTeacher[] = (await pg(`/teacher_public?${filters.join("&")}`)) ?? [];
   const teachers = rows.slice(0, PAGE_SIZE);
   const hasNextPage = rows.length > PAGE_SIZE;
+  // Only needed for the invite card on an empty result.
+  const viewer = teachers.length === 0 ? await getSessionUser().catch(() => null) : null;
 
   function pageHref(p: number) {
     const params = new URLSearchParams();
@@ -56,6 +83,9 @@ export default async function SearchPage({
     if (minPrice) params.set("minPrice", minPrice);
     if (maxPrice) params.set("maxPrice", maxPrice);
     if (minRating) params.set("minRating", minRating);
+    if (mode) params.set("mode", mode);
+    if (cls) params.set("cls", cls);
+    if (exam) params.set("exam", exam);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
     return qs ? `/search?${qs}` : "/search";
@@ -94,6 +124,29 @@ export default async function SearchPage({
               <option value="2">2★ &amp; up</option>
             </select>
           </div>
+          <div className="search-field">
+            <select name="mode" defaultValue={mode ?? ""} form="filters-form" aria-label="How they teach">
+              <option value="">Home or online</option>
+              <option value="online">Online</option>
+              <option value="home">Home tuition</option>
+            </select>
+          </div>
+          <div className="search-field">
+            <select name="cls" defaultValue={cls ?? ""} form="filters-form" aria-label="Class">
+              <option value="">Any class</option>
+              {CLASSES.map((c) => (
+                <option key={c} value={c}>Class {c}</option>
+              ))}
+            </select>
+          </div>
+          <div className="search-field">
+            <select name="exam" defaultValue={exam ?? ""} form="filters-form" aria-label="Exam">
+              <option value="">Any exam</option>
+              {EXAMS.map((e) => (
+                <option key={e.code} value={e.code}>{e.label}</option>
+              ))}
+            </select>
+          </div>
           <button type="submit" className="secondary" form="filters-form">Apply filters</button>
         </div>
         <form id="filters-form" method="get" hidden>
@@ -114,7 +167,12 @@ export default async function SearchPage({
         {page === 1 && !hasNextPage ? " found" : " on this page"}
       </h2>
       {teachers.length === 0 && (
-        <p className="hint">No teachers match yet — try a different subject or city.</p>
+        <>
+          <p className="hint">No teachers match yet — try a different subject or city.</p>
+          {page === 1 && (subject || city) && (
+            <InviteTeacherCard subject={subject} city={city} inviterId={viewer?.id ?? null} />
+          )}
+        </>
       )}
       <div className="teacher-grid">
         {teachers.map((t) => (

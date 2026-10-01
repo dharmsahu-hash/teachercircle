@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getCitySubjectPage } from "@/lib/directory";
 import { getAppBaseUrl } from "@/lib/url";
 import TeacherCard from "@/components/TeacherCard";
+import { summarizeListings } from "@/lib/listingSummary";
+import { CLASSES, classSlug } from "@/lib/levels";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +18,7 @@ export async function generateMetadata({
   if (!data) return { title: "Not found" };
 
   const title = `${data.subjectName} tutors in ${data.cityName}`;
-  const description = `Find a ${data.subjectName} tutor in ${data.cityName} on TeacherCircle — ${data.teachers.length} real listing${
-    data.teachers.length === 1 ? "" : "s"
-  }, real feedback from students and parents, connect directly with no agency in between.`;
+  const description = `${summarizeListings(data.teachers, { place: data.cityName, subject: data.subjectName }).slice(0, 2).join(" ")} Connect directly on TeacherCircle, no agency in between.`;
   const url = `${getAppBaseUrl()}/tutors/${params.city}/${params.subject}`;
 
   return {
@@ -59,10 +59,24 @@ export default async function CitySubjectTutorsPage({
       <h1>
         {data.subjectName} tutors in {data.cityName}
       </h1>
-      <p className="hint" style={{ marginBottom: 20 }}>
-        {data.teachers.length} {data.subjectName} teacher{data.teachers.length === 1 ? "" : "s"} listed
-        in {data.cityName} — real feedback from students and parents, connect directly.
+      <p className="listing-summary">
+        {summarizeListings(data.teachers, { place: data.cityName, subject: data.subjectName }).join(" ")}
       </p>
+
+      {/* Growth #3: narrower class pages, only for classes a teacher here lists. */}
+      {(() => {
+        const taught = new Set(data.teachers.flatMap((t) => t.classes ?? []));
+        const classes = CLASSES.filter((c) => taught.has(c));
+        return classes.length > 0 ? (
+          <div className="pills" style={{ marginBottom: 20 }}>
+            {classes.map((c) => (
+              <Link key={c} href={`/tutors/${params.city}/${params.subject}/${classSlug(c)}`} className="pill pill-link">
+                Class {c}
+              </Link>
+            ))}
+          </div>
+        ) : null;
+      })()}
 
       <div className="teacher-grid">
         {data.teachers.map((t) => (

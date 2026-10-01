@@ -245,6 +245,15 @@ export function createFakeBackend() {
       return json(res, 200, { access_token, refresh_token: "fake-refresh", expires_in: 3600, user: { id: user.id, email } });
     }
 
+    // Mirrors GoTrue POST /resend: records what was asked for so the
+    // system test can check the redirect_to the app sent.
+    if (req.method === "POST" && url.pathname === "/resend") {
+      const { type, email } = await readBody(req);
+      db.resends = db.resends ?? [];
+      db.resends.push({ type, email, redirect_to: url.searchParams.get("redirect_to") });
+      return json(res, 200, {});
+    }
+
     error(res, 404, "not found");
   });
 
@@ -301,6 +310,11 @@ export function createFakeBackend() {
             subscription_expires_at: null,
             deleted_at: null,
             self_attested_at: body.self_attested_at ?? null,
+            // 0027 columns and defaults
+            teaching_mode: body.teaching_mode ?? "home",
+            classes: body.classes ?? [],
+            boards: body.boards ?? [],
+            exams: body.exams ?? [],
           };
           db.teacher_profile.set(body.user_id, row);
           return json(res, 201, [row]);

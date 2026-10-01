@@ -68,8 +68,9 @@ export async function signUpWithPassword(
   // localhost here: GoTrue will happily embed that, and the inbox link
   // opens a dev server. If this URL's host is not the Supabase Site URL
   // and is not on the Redirect URLs allow-list, GoTrue drops it and uses
-  // Site URL instead — that dashboard value also has to be the public app.
-  const redirectTo = `${getAppBaseUrl(requestHost)}/auth/callback`;
+  // Site URL instead — that dashboard value also has to be the public app
+  // (docs/03-deployment.md, Step 4b).
+  const redirectTo = confirmationRedirect(requestHost);
   const data = await gotrue(`/signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
     email,
     password,
@@ -78,6 +79,23 @@ export async function signUpWithPassword(
     return { confirmationRequired: true, user: { id: data.id, email: data.email } };
   }
   return data as GoTrueSession;
+}
+
+// Sends a fresh signup confirmation email (GoTrue POST /resend), with the
+// same redirect_to rule as signup — a query parameter, not a body field.
+export async function resendSignupConfirmation(email: string, requestHost?: string | null): Promise<void> {
+  const redirectTo = confirmationRedirect(requestHost);
+  await gotrue(`/resend?redirect_to=${encodeURIComponent(redirectTo)}`, { type: "signup", email });
+}
+
+// Where the link in a confirmation email should land. Logged (host only, no
+// email) so Vercel's logs show what the app asked for: if users still land
+// on localhost while this logs the public host, Supabase rejected the
+// redirect and fell back to its Site URL — a dashboard setting, not code.
+function confirmationRedirect(requestHost?: string | null): string {
+  const redirectTo = `${getAppBaseUrl(requestHost)}/auth/callback`;
+  console.info(`auth: confirmation email redirect_to host = ${new URL(redirectTo).host}`);
+  return redirectTo;
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<GoTrueSession> {

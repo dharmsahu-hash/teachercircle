@@ -15,12 +15,14 @@ export default function AuthCallbackPage() {
     const expires_in = params.get("expires_in");
     const err = params.get("error_description");
 
+    // Both Google sign-in and email confirmation links land here.
     if (err) {
-      setError(err);
+      // e.g. an expired or already-used confirmation link.
+      setError(`${err.replace(/\+/g, " ")}. Sign in again, or use "Resend confirmation email" on the sign-in page.`);
       return;
     }
     if (!access_token) {
-      setError("No token returned from Google — check GOOGLE_CLIENT_ID/SECRET and the redirect URI.");
+      setError("This sign-in link didn't include a session. Please sign in again from the sign-in page.");
       return;
     }
 

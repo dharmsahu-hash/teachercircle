@@ -14,6 +14,7 @@
 // Plain Response, not NextResponse: route handlers accept either, and this
 // keeps the module importable from the unit tests (plain Node, no Next).
 import { z } from "zod";
+import { BOARD_CODES, CLASSES, EXAM_CODES, TEACHING_MODES } from "./levels";
 
 // z.guid(), not z.uuid(): any 8-4-4-4-12 hex id is accepted. Postgres and
 // GoTrue generate v4 UUIDs, but db/seed.sql uses readable ids such as
@@ -62,6 +63,10 @@ export const signupSchema = z.object({
 });
 export const loginSchema = signupSchema;
 
+export const resendConfirmationSchema = z.object({
+  email: z.string({ message: "Please enter your email address" }).trim().min(1, "Please enter your email address").pipe(email),
+});
+
 export const roleSchema = z.object({
   role: z.enum(["student", "parent", "teacher"], { message: "Invalid role" }),
   // Referral id from an invite link. Best effort: a bad value is ignored by
@@ -96,6 +101,11 @@ export const teacherProfileSchema = z.object({
   contact_phone: optionalText(30, "Contact phone"),
   is_listed: z.boolean({ message: "is_listed must be true or false" }).nullish(),
   self_attested: z.boolean({ message: "self_attested must be true or false" }).nullish(),
+  // Growth #2 / #3 (lib/levels.ts, migration 0027).
+  teaching_mode: z.enum(TEACHING_MODES, { message: "Choose home tuition, online, or both" }).nullish(),
+  classes: z.array(z.enum(CLASSES, { message: "Classes must be 1 to 12" })).max(12).nullish(),
+  boards: z.array(z.string().refine((b) => BOARD_CODES.includes(b), "Unknown board")).max(BOARD_CODES.length).nullish(),
+  exams: z.array(z.string().refine((e) => EXAM_CODES.includes(e), "Unknown exam")).max(EXAM_CODES.length).nullish(),
 });
 
 // ---- connections, feedback, messages ----

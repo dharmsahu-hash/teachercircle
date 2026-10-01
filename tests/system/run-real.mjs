@@ -136,8 +136,16 @@ async function main() {
 
   // ---------- 5. Search against the real teacher_public VIEW ----------
   {
-    const r = await teacherClient.get("/api/search?subject=Maths");
-    check("5.1 Real teacher_public view returns the listed teacher", r.status === 200 && r.body.some((t) => t.user_id === teacherId), JSON.stringify(r.body.map((t) => t.name)));
+    // Walk the pages: on a reused local database earlier runs' teachers can
+    // push this run's (unrated, so last) teacher past page 1.
+    let r;
+    let found = false;
+    for (let page = 1; page <= 20 && !found; page++) {
+      r = await teacherClient.get(`/api/search?subject=Maths&page=${page}`);
+      if (r.status !== 200 || !Array.isArray(r.body) || r.body.length === 0) break;
+      found = r.body.some((t) => t.user_id === teacherId);
+    }
+    check("5.1 Real teacher_public view returns the listed teacher", found, `last status ${r?.status}`);
   }
   {
     // Checks by ID, not "list is empty" — the seed data (db/seed.sql) has
@@ -399,6 +407,33 @@ async function main() {
       "14.1 GET /api/health -> 200 ok against real PostgREST + GoTrue",
       r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
       JSON.stringify(r.body)
+    );
+  }
+
+  // ---------- 15. Teaching mode / classes / exams (0027) on the real database ----------
+  {
+    const r = await teacherClient.post("/api/teacher/profile", {
+      name: "Real Teacher", city: "Mumbai", is_listed: true, teaching_mode: "online", classes: ["11", "12"], exams: ["jee"],
+    });
+    check("15.1 Real teacher_profile accepts mode/classes/exams within the CHECK constraints", r.status === 200 && r.body?.teaching_mode === "online", JSON.stringify(r.body));
+  }
+  {
+    // Bypass the app's validation to prove the database itself refuses values outside the list.
+    let refused = false;
+    try {
+      psql(`update teacher_profile set boards = '{harvard}' where user_id = '${teacherId}';`);
+    } catch {
+      refused = true;
+    }
+    check("15.2 The database CHECK constraint refuses a board outside the fixed list", refused, refused ? "refused" : "accepted!");
+  }
+  {
+    const r = await makeClient().get("/tutors/online/maths");
+    const r2 = await makeClient().get("/tutors/exam/jee/maths");
+    check(
+      "15.3 Real teacher_public exposes the new columns: online and JEE pages render",
+      r.status === 200 && String(r.body).includes("Real Teacher") && r2.status === 200,
+      `online ${r.status}, jee ${r2.status}`
     );
   }
 

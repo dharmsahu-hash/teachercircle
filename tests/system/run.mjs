@@ -766,6 +766,31 @@ async function runScenarios(backend) {
     check("17b.4 sitemap.xml lists the blog and its articles", r.status === 200 && String(r.body).includes("/blog/home-tutor-vs-coaching-centre"), `got ${r.status}`);
   }
 
+  // ---------- 17c. Growth #5 / #6 ----------
+  {
+    const r = await makeClient().get("/search?subject=Sanskrit&city=Nowhereville");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check(
+      "17c.1 Empty search shows the invite card for that subject and city, with a WhatsApp share",
+      r.status === 200 && html.includes("Know a Sanskrit teacher in Nowhereville?") && html.includes("https://wa.me/?text="),
+      `got ${r.status}`
+    );
+  }
+  {
+    const r = await teacherClient.get("/search?subject=Sanskrit&city=Nowhereville");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check("17c.2 Signed in, the invite card carries the viewer's own referral link", r.status === 200 && /\/login\?ref=[0-9a-f-]{36}/.test(html), `got ${r.status}`);
+  }
+  {
+    const r = await teacherClient.get("/tutors/bengaluru");
+    const html = String(r.body).replace(/<!-- -->/g, "");
+    check(
+      "17c.3 City page has a factual summary built from its real listings (count + rate)",
+      r.status === 200 && /There (is|are) \d+ teachers? listed in Bengaluru\./.test(html) && html.includes("₹"),
+      html.match(/<p class="listing-summary">[^<]*/)?.[0] ?? `got ${r.status}`
+    );
+  }
+
   // ---------- 18. G5: referral tracking ----------
   {
     const inviter = makeClient();
@@ -832,6 +857,109 @@ async function runScenarios(backend) {
       r.status === 200 && r.body?.status === "ok" && r.body?.checks?.database?.ok === true && r.body?.checks?.auth?.ok === true,
       JSON.stringify(r.body)
     );
+  }
+
+  // ---------- 21. Resend confirmation email ----------
+  {
+    // As on Vercel: the public host arrives as x-forwarded-host.
+    const res = await fetch(BASE + "/api/auth/resend-confirmation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-host": "teachercircle.vercel.app", "x-forwarded-for": "10.9.9.1" },
+      body: JSON.stringify({ email: "waiting@test.local" }),
+    });
+    const sent = (backend.db.resends ?? []).at(-1);
+    check(
+      "21.1 Resend asks GoTrue for a signup email whose redirect_to is the public /auth/callback, not localhost",
+      res.status === 200 && sent?.type === "signup" && sent?.email === "waiting@test.local" && sent?.redirect_to === "https://teachercircle.vercel.app/auth/callback",
+      JSON.stringify(sent)
+    );
+  }
+  {
+    const r = await makeClient().post("/api/auth/resend-confirmation", { email: "not-an-email" });
+    check("21.2 Resend rejects an invalid email address", r.status === 400, `got ${r.status}`);
+  }
+  {
+    const c = makeClient();
+    for (let i = 0; i < 3; i++) await c.post("/api/auth/resend-confirmation", { email: `r${i}@test.local` });
+    const r = await c.post("/api/auth/resend-confirmation", { email: "r4@test.local" });
+    check("21.3 Resend is rate limited (4th request from one IP within an hour -> 429)", r.status === 429, `got ${r.status}`);
+  }
+
+  // ---------- 22. Growth #2 / #3: teaching mode, classes, boards, exams ----------
+  {
+    const r = await teacherClient.post("/api/teacher/profile", {
+      name: "Meera R.", city: "Bengaluru", is_listed: true,
+      teaching_mode: "both", classes: ["10", "9", "10"], boards: ["cbse"], exams: ["neet"],
+    });
+    check(
+      "22.1 Teacher saves mode, classes, boards and exams (duplicates removed)",
+      r.status === 200 && r.body?.teaching_mode === "both" && JSON.stringify(r.body?.classes) === '["10","9"]' && r.body?.exams?.[0] === "neet",
+      JSON.stringify(r.body)
+    );
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { boards: ["cbse", "harvard"] });
+    check("22.2 A board outside the fixed list is rejected", r.status === 400 && r.body?.error === "Unknown board", JSON.stringify(r.body));
+  }
+  {
+    const r = await teacherClient.post("/api/teacher/profile", { teaching_mode: "carrier-pigeon" });
+    check("22.3 An unknown teaching mode is rejected", r.status === 400, `got ${r.status}`);
+  }
+  const html = async (path) => {
+    const r = await makeClient().get(path);
+    return { status: r.status, html: String(r.body).replace(/<!-- -->/g, "") };
+  };
+  {
+    const { status, html: h } = await html("/tutors/online/maths");
+    check("22.4 /tutors/online/maths lists the online Maths teacher", status === 200 && h.includes("Online Maths tutors") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const { status } = await html("/tutors/online/geography-xyz");
+    check("22.5 An online subject nobody teaches -> 404 (no thin page)", status === 404, `got ${status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/exam/neet/maths");
+    check("22.6 /tutors/exam/neet/maths lists the NEET teacher", status === 200 && h.includes("NEET Maths tutors") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const { status } = await html("/tutors/exam/jee");
+    check("22.7 An exam nobody prepares for -> 404", status === 404, `got ${status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/bengaluru/maths/class-10");
+    check("22.8 /tutors/bengaluru/maths/class-10 -> 200 with the matching teacher", status === 200 && h.includes("Class 10 Maths tutors in Bengaluru") && h.includes("Meera"), `got ${status}`);
+  }
+  {
+    const a = await html("/tutors/bengaluru/maths/class-3");
+    const b = await html("/tutors/bengaluru/maths/grade-10");
+    check("22.9 A class nobody teaches, or a malformed level slug -> 404", a.status === 404 && b.status === 404, `got ${a.status}, ${b.status}`);
+  }
+  {
+    const { status, html: h } = await html("/tutors/bengaluru/maths");
+    check("22.10 City+subject page links to its class pages and says who teaches online", status === 200 && h.includes('href="/tutors/bengaluru/maths/class-10"') && /also teach(es)? online/.test(h), `got ${status}`);
+  }
+  {
+    const r1 = await makeClient().get("/api/search?subject=Maths");
+    const online = await html("/search?subject=Maths&mode=online&cls=10&exam=neet");
+    const none = await html("/search?subject=Maths&exam=ielts");
+    check(
+      "22.11 Search filters by mode, class and exam",
+      online.status === 200 && online.html.includes("Meera") && none.status === 200 && !none.html.includes("Meera R."),
+      `online ${online.status}, ielts ${none.status}, api ${r1.status}`
+    );
+  }
+  {
+    const { status, html: h } = await html("/tutors");
+    check("22.12 /tutors hub shows Online and Exam preparation sections", status === 200 && h.includes('href="/tutors/online/maths"') && h.includes('href="/tutors/exam/neet"'), `got ${status}`);
+  }
+  {
+    const r = await makeClient().get("/sitemap.xml");
+    const xml = String(r.body);
+    check("22.13 sitemap includes the online, exam and class pages", xml.includes("/tutors/online/maths") && xml.includes("/tutors/exam/neet/maths") && xml.includes("/tutors/bengaluru/maths/class-10"), `got ${r.status}`);
+  }
+  {
+    const { status, html: h } = await html("/search?subject=Maths&minPrice=abc%26x");
+    check("22.14 A malformed price filter is ignored instead of erroring", status === 200, `got ${status}`);
   }
 }
 

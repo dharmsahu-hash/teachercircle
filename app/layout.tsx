@@ -5,6 +5,12 @@ import GoogleAnalytics from "@/components/GoogleAnalytics";
 import AdSense from "@/components/AdSense";
 import { getAppBaseUrl } from "@/lib/url";
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+
+// Inter: designed for screens and much crisper than Windows' Segoe UI at
+// small sizes. next/font downloads it at build time and serves it from this
+// site (no request to Google from visitors' browsers) with no layout shift.
+const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-sans" });
 
 const description =
   "Find a teacher near you in India. Search by subject and city, read real feedback from students and parents, and connect directly — no agency in between, free for teachers.";
@@ -37,7 +43,7 @@ const themeInitScript = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <AdSense />
