@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { pgRpc } from "@/lib/db";
+import { pgRpc, publicErrorMessage } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin().catch(() => null);
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       admin.token
     );
     return NextResponse.json({ ok: true, userId: newId });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not add teacher") }, { status: 400 });
   }
 }

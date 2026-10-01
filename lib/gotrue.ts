@@ -37,9 +37,22 @@ async function gotrue(path: string, body: unknown) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error_description || data?.msg || `GoTrue ${path} failed (${res.status})`);
+    const userMessage = data?.error_description || data?.msg;
+    if (!userMessage) console.error(`GoTrue ${path.split("?")[0]} failed (${res.status})`, data);
+    throw new GoTrueError(res.status, userMessage || "Sign-in is temporarily unavailable — please try again.");
   }
   return data;
+}
+
+// GoTrue's own error_description / msg ("Invalid login credentials", "User
+// already registered", ...) is written for end users, so routes may show
+// it. Any other error from a sign-in call (network failure, a bug) is not.
+export class GoTrueError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
 }
 
 export async function signUpWithPassword(

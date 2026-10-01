@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { signInWithPassword } from "@/lib/gotrue";
+import { signInWithPassword, GoTrueError } from "@/lib/gotrue";
+import { publicErrorMessage } from "@/lib/db";
 import { setSessionCookie } from "@/lib/session";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 
@@ -20,7 +21,10 @@ export async function POST(req: NextRequest) {
     const session = await signInWithPassword(email, password);
     setSessionCookie(session.access_token, session.expires_in);
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 401 });
+  } catch (err) {
+    if (err instanceof GoTrueError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not sign you in — please try again.") }, { status: 500 });
   }
 }

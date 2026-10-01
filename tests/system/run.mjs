@@ -210,6 +210,11 @@ async function runScenarios(backend) {
   {
     const r = await teacherClient.post("/api/auth/role", { role: "parent" });
     check("3.3 Re-assign role after already set -> 400 (immutable)", r.status === 400, `got ${r.status}: ${JSON.stringify(r.body)}`);
+    check(
+      "3.3b SECURITY: a known SQL exception reaches the client as friendly text, not the raw PostgREST body",
+      r.body?.error === "Your role has already been set." && !/PostgREST|P0001|\{/.test(r.body?.error ?? ""),
+      JSON.stringify(r.body)
+    );
   }
 
   // ---------- 4. Teacher profile CRUD — positive & negative ----------
@@ -331,6 +336,11 @@ async function runScenarios(backend) {
   {
     const r = await studentClient.post("/api/reviews", { teacherId: meeraId, rating: 4, comment: "again" });
     check("7.2 Duplicate review same teacher -> rejected", r.status !== 200 && r.status !== 201, `got ${r.status}`);
+    check(
+      "7.2b SECURITY: an unlisted database error (unique violation) returns the route's fallback, no constraint/table names",
+      typeof r.body?.error === "string" && !/PostgREST|constraint|review_|duplicate key|\{/.test(r.body.error),
+      JSON.stringify(r.body)
+    );
   }
   const teacher2Id = [...backend.db.teacher_profile.keys()].find((id) => backend.db.teacher_profile.get(id).name === "Unlisted Teacher");
   {

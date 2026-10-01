@@ -30,7 +30,7 @@ Google (Gmail) and email/password are both sign-in paths. `isGoogleSignInEnabled
 
 Browser → Next.js route handler or server component → `pg()` / `pgRpc()` with the user JWT → PostgREST → Postgres RLS.
 
-`lib/db.ts` sets `Prefer: return=representation`, `cache: "no-store"`, and `apikey` only when `SUPABASE_API_KEY` is set. Supabase Kong returns 401 without that header even if the bearer token is valid. Errors throw `PostgrestError` whose message includes the raw body. Many routes return `err.message` to the client. That leak is a known open issue (`docs/05` finding #1), not something to copy into new routes if you are touching them anyway.
+`lib/db.ts` sets `Prefer: return=representation`, `cache: "no-store"`, and `apikey` only when `SUPABASE_API_KEY` is set. Supabase Kong returns 401 without that header even if the bearer token is valid. Errors throw `PostgrestError` (raw body in `message`, parsed Postgres text in `dbMessage`). Routes never return that to the client: they call `publicErrorMessage(err, fallback)`, which maps the allow-listed `raise exception` texts to friendly copy and logs anything else (`docs/05` finding #1, fixed 2026-10-01). `lib/gotrue.ts` throws `GoTrueError` carrying GoTrue's own user-facing message; login/signup show only that.
 
 ## Schema map
 
@@ -117,7 +117,7 @@ docker compose exec -T postgres psql -h 127.0.0.1 -U teachercircle -d postgres <
 
 App: http://localhost:3000. Become admin with the SQL in `README.md`, then open `/admin/users`.
 
-Tests, three tiers: `npm run test:unit` (pure), `npm run test:system` (fake backend, no RLS), `npm run test:system:real` (live containers). The fake tier cannot see RLS-on-RLS bugs. `npm run build` and `npx tsc --noEmit` are the type/build bar. There is no CI workflow.
+Tests, three tiers: `npm run test:unit` (pure), `npm run test:system` (fake backend, no RLS), `npm run test:system:real` (live containers). The fake tier cannot see RLS-on-RLS bugs. `npm run build` and `npx tsc --noEmit` are the type/build bar. GitHub Actions (`.github/workflows/ci.yml`) runs all of it, Tier 3 included, on pushes and PRs to `stage` and `main`.
 
 ## Environment
 
@@ -127,9 +127,7 @@ Local: `.env.example` (`DB_PASSWORD`, `JWT_SECRET`, Google client, `UPI_PAYEE_*`
 
 From `docs/05` and `docs/07`, still true as of this review:
 
-- Sanitize PostgREST errors before they reach clients.
 - Turn off GoTrue autoconfirm and use real SMTP before treating local auth as production-shaped. Production mail is Brevo; Supabase's own mailer is separate and has been blocked by Brevo's IP allowlist before.
-- Add CI for `test:unit` and `build`.
 - Optional: zod on request bodies, one response envelope, structured logs, a `/api/health` that checks PostgREST and GoTrue.
 - G6 blog/content is not started. It needs writing, not a new table.
 - No claim-listing flow, no CSP, no JWT denylist, no materialized rating aggregate, no payment gateway (Razorpay/Cashfree).

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
-import { pgRpc, PostgrestError } from "@/lib/db";
+import { pgRpc, PostgrestError, publicErrorMessage } from "@/lib/db";
 import { isValidFullName, isValidPhone } from "@/lib/contact";
 
 export async function POST(req: NextRequest) {
@@ -23,6 +23,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     const status = err instanceof PostgrestError ? 400 : 500;
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status });
+    return NextResponse.json({ error: publicErrorMessage(err, "Could not save your contact details") }, { status });
   }
 }
