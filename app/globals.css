@@ -1,10 +1,10 @@
 :root {
   --ink: #1b2430;
-  --muted: #5b6472;
+  --muted: #4a5260;
   --line: #d7dce3;
   --paper: #f7f8fa;
   --card: #ffffff;
-  --accent: #0f7b6c;
+  --accent: #0d6e61;
   --accent-soft: #e4f1ee;
   --danger: #9a3d2f;
 }
@@ -15,7 +15,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --ink: #e8ecf1;
-    --muted: #9aa4b2;
+    --muted: #b3bcc8;
     --line: #333d4a;
     --paper: #14181e;
     --card: #1c222a;
@@ -26,7 +26,7 @@
 }
 :root[data-theme="dark"] {
   --ink: #e8ecf1;
-  --muted: #9aa4b2;
+  --muted: #b3bcc8;
   --line: #333d4a;
   --paper: #14181e;
   --card: #1c222a;
@@ -42,8 +42,11 @@ html, body { margin: 0; }
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  font-family: var(--font-sans), -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.6;
 }
 
 a { color: var(--accent); }
@@ -248,7 +251,7 @@ a { color: var(--accent); }
   padding: 44px var(--page-pad) 36px;
 }
 .footer-brand { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-.footer-brand p { margin: 0; color: var(--muted); font-size: 14px; max-width: 34ch; }
+.footer-brand p { margin: 0; color: var(--muted); font-size: 15px; max-width: 34ch; }
 .footer-cta {
   display: inline-flex;
   align-items: center;
@@ -269,12 +272,12 @@ a { color: var(--accent); }
 .footer-heading {
   margin: 0 0 4px;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.footer-col a { color: var(--muted); font-size: 14px; text-decoration: none; width: fit-content; }
+.footer-col a { color: var(--muted); font-size: 15px; text-decoration: none; width: fit-content; }
 .footer-col a:hover { color: var(--accent); }
 
 .footer-bottom { border-top: 1px solid var(--line); }
@@ -306,7 +309,7 @@ a { color: var(--accent); }
 
 h1 { font-size: 26px; margin: 0 0 6px; }
 h2 { font-size: 18px; margin: 28px 0 10px; }
-p.hint { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+p.hint { color: var(--muted); font-size: 15px; margin: 0 0 20px; }
 
 .card {
   background: var(--card);
@@ -317,7 +320,7 @@ p.hint { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
 }
 
 form { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+label { font-size: 14px; font-weight: 600; color: var(--ink); }
 input, textarea, select {
   font: inherit;
   padding: 9px 11px;
@@ -345,10 +348,10 @@ button.secondary, .btn.secondary { background: var(--accent-soft); color: var(--
 button.danger, .btn.danger { background: var(--danger); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.error { color: var(--danger); font-size: 13px; }
+.error { color: var(--danger); font-size: 14px; }
 .badge {
   display: inline-block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 100px;
@@ -394,7 +397,7 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 .pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .pill {
   display: inline-block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 100px;
@@ -468,7 +471,7 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
   margin-bottom: 10px; font-size: 20px;
 }
 .feature-card h3 { font-size: 15px; margin: 0 0 4px; }
-.feature-card p { font-size: 13px; color: var(--muted); margin: 0; }
+.feature-card p { font-size: 15px; color: var(--muted); margin: 0; }
 
 .stats-strip {
   display: flex;
@@ -481,7 +484,7 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
   margin: 8px 0 32px;
 }
 .stats-strip .stat-value { font-size: 24px; font-weight: 700; color: var(--accent); }
-.stats-strip .stat-label { font-size: 12px; color: var(--muted); }
+.stats-strip .stat-label { font-size: 14px; color: var(--muted); }
 
 /* Search results */
 .teacher-grid {
