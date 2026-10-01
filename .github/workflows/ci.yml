@@ -1,0 +1,94 @@
+name: CI
+
+# Runs on every push to stage/main and on PRs into them. Branch flow: work is
+# pushed to stage, checked here, then merged into main by hand.
+on:
+  push:
+    branches: [stage, main]
+  pull_request:
+    branches: [stage, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Types, unit, build, system (fake backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24+: unit tests use mock.module({ exports }) and
+          # --experimental-strip-types.
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run test:unit
+      - run: npm run build
+      # Tier 2 starts `next start` on the build above against tests/fakes.
+      - run: npm run test:system
+
+  real-stack:
+    name: System (real Postgres + GoTrue + PostgREST)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Create throwaway .env
+        run: |
+          cp .env.example .env
+          sed -i \
+            -e "s/^DB_PASSWORD=$/DB_PASSWORD=$(openssl rand -hex 24)/" \
+            -e "s/^JWT_SECRET=$/JWT_SECRET=$(openssl rand -hex 32)/" \
+            -e "s/^MEILI_MASTER_KEY=$/MEILI_MASTER_KEY=$(openssl rand -hex 24)/" \
+            -e "s/^MINIO_ROOT_PASSWORD=$/MINIO_ROOT_PASSWORD=$(openssl rand -hex 24)/" \
+            .env
+
+      # MinIO is not used by app code (AGENTS.md) and its image is no longer
+      # publicly pullable, so it is left out.
+      - name: Start stack
+        run: docker compose up -d --build postgres postgrest gotrue meilisearch redis app
+
+      - name: Wait for postgres, then bootstrap
+        run: |
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q postgres)")" = healthy ] && break
+            sleep 2
+          done
+          sh db/bootstrap.sh
+
+      # GoTrue crash-loops until bootstrap has run, then recovers on its own.
+      - name: Wait for gotrue, then migrate and seed
+        run: |
+          for i in $(seq 1 90); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q gotrue)")" = healthy ] && break
+            sleep 4
+          done
+          sh db/run-migrations.sh
+          docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U teachercircle -d postgres < db/seed.sql
+
+      - name: Wait for the app
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000/ && exit 0
+            sleep 2
+          done
+          echo "app did not come up"; exit 1
+
+      - run: npm run test:system:real
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --no-color --tail=200
