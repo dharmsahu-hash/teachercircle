@@ -237,6 +237,27 @@ after that takes 10-30s to cold-start — not broken, just slow once). A schedul
 GitHub Actions workflow hitting the project on a cron is the standard free fix; add
 one once the app is live.
 
+### Step 7b — Push alerts and the teacher digest (migration 0030)
+
+Free browser push (Android and desktop Chrome/Edge/Firefox; iPhone 16.4+ once the
+site is added to the Home Screen) plus **one** digest email a day to teachers.
+**No new matching student request means no digest email**, and a daily cap
+(`DIGEST_DAILY_LIMIT`, default 200) keeps you inside Brevo's free 300 a day.
+Chat messages email only when the recipient has no alert device and it is the
+first unread message from that person.
+
+1. Apply `db/migrations/0030_notifications.sql` in the Supabase SQL editor, then
+   `NOTIFY pgrst, 'reload schema';`. Until you do, the app keeps working (alerts
+   just show as unavailable and messages use the old email).
+2. Run `node scripts/notify-setup.mjs` on your computer. It prints the keys and one SQL
+   line. Run the SQL line in Supabase (it stores only a hash of the secret).
+3. Vercel -> Environment Variables (Production): `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+   `VAPID_SUBJECT`, `CRON_SECRET`, optional `DIGEST_DAILY_LIMIT`. Redeploy.
+4. GitHub -> Settings -> Secrets and variables -> Actions: secret `CRON_SECRET`
+   (same value) and variable `SITE_URL` (your domain). `.github/workflows/notify-jobs.yml`
+   then runs the digest at 09:00 IST and streak reminders at 20:00 IST. Try it
+   once with Actions -> Notification jobs -> Run workflow.
+
 ### Step 8 — Turning on billing
 
 Still ships UI-disabled — see `lib/featureToggles.ts` (`SUBSCRIPTION_UI_ENABLED`).

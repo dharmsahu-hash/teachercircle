@@ -6,6 +6,7 @@ import { pgRpc } from "@/lib/db";
 import Avatar from "@/components/Avatar";
 import AvatarPicker from "@/components/AvatarPicker";
 import InviteLink from "@/components/InviteLink";
+import NotificationSettings from "@/components/NotificationSettings";
 import ContactInfoForm from "./ContactInfoForm";
 import DeleteAccountButton from "./DeleteAccountButton";
 
@@ -29,6 +30,8 @@ export default async function AccountPage() {
         <p><b>Email:</b> {user.email}</p>
         <p><b>Role:</b> {user.role ?? "—"}</p>
       </div>
+
+      <NotificationSettings role={user.role ?? null} vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null} />
 
       <h2>Contact details</h2>
       <p className="hint">

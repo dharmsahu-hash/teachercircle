@@ -859,6 +859,33 @@ async function runScenarios(backend) {
     );
   }
 
+  // ---------- 20b. Alerts and digest: the guards, with no database behind them ----------
+  {
+    const body = { endpoint: "https://fcm.googleapis.com/fcm/send/x", keys: { p256dh: "p".repeat(30), auth: "a".repeat(16) } };
+    const anon = await makeClient().post("/api/push/subscribe", body);
+    const internal = await teacherClient.post("/api/push/subscribe", { ...body, endpoint: "https://169.254.169.254/latest/meta-data" });
+    const shape = await teacherClient.post("/api/push/subscribe", { endpoint: "x" });
+    const prefsAnon = await makeClient().get("/api/notifications/prefs");
+    const jobs = [await makeClient().post("/api/jobs/digest", {}), await makeClient().post("/api/jobs/streak-reminders", {})];
+    const wrongBearer = await fetch(BASE + "/api/jobs/digest", { method: "POST", headers: { Authorization: "Bearer " + "x".repeat(40) } });
+    check(
+      "20b.1 Alert endpoints: anonymous 401, non-push hosts and bad shapes 400, job endpoints refuse everyone without the secret",
+      anon.status === 401 && internal.status === 400 && shape.status === 400 && prefsAnon.status === 401 && jobs.every((j) => j.status === 401) && wrongBearer.status === 401,
+      `${anon.status} ${internal.status} ${shape.status} ${prefsAnon.status} ${jobs.map((j) => j.status)} ${wrongBearer.status}`
+    );
+    const manifest = await fetch(BASE + "/manifest.webmanifest");
+    const mj = await manifest.json().catch(() => null);
+    const sw = await fetch(BASE + "/sw.js");
+    const swText = await sw.text();
+    check(
+      "20b.2 The site is installable: manifest, service worker and icon are served",
+      manifest.status === 200 && mj?.display === "standalone" && mj?.icons?.length >= 2 && sw.status === 200 && swText.includes("showNotification") && (await fetch(BASE + "/pwa-icon/192")).status === 200 && (await fetch(BASE + "/pwa-icon/99")).status === 404,
+      `${manifest.status} ${sw.status}`
+    );
+    const bad = await fetch(BASE + "/unsubscribe?t=nonsense");
+    check("20b.3 A bad unsubscribe link shows a friendly page and changes nothing", bad.status === 200 && /didn.t work/.test(await bad.text()), String(bad.status));
+  }
+
   // ---------- 21. Resend confirmation email ----------
   {
     // As on Vercel: the public host arrives as x-forwarded-host.

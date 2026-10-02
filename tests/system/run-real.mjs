@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 // not a valid cwd.
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
-const BASE = "http://localhost:3000";
+const BASE = process.env.TEST_BASE_URL || "http://localhost:3000";
 // Real gap found the second time this script ran: it used fixed email
 // addresses, so re-running it against the same persistent real database
 // (unlike Tier 2's fresh-in-memory-store-per-run fake backend) failed at the
@@ -651,6 +651,200 @@ async function main() {
     const pages = [await makeClient().get("/daily"), await makeClient().get("/daily/class-7-8"), await studentClient.get("/daily")];
     check("17.10 Anonymous saving is refused (401); the quiz pages render on the real stack, signed in or not", anon.status === 401 && pages.every((p) => p.status === 200), `anon ${anon.status}, pages ${pages.map((p) => p.status)}`);
   }
+
+  // ---------- 18. Push alerts + teacher digest (0030) against the real database ----------
+  // A test-only job secret is registered, and the digest logic is exercised
+  // through the secret-guarded functions exactly as the app calls them.
+  const JOB = "t".repeat(40);
+  const hashSql = `encode(sha256(convert_to('${JOB}', 'utf8')), 'hex')`;
+  psql(`insert into job_secret (id, secret_hash) values (1, ${hashSql}) on conflict (id) do update set secret_hash = excluded.secret_hash;`);
+  const rpcJson = (fn, args) => {
+    try {
+      return { ok: true, v: JSON.parse(psql(`select ${fn}(${args});`) || "null") };
+    } catch (e) {
+      return { ok: false, v: String(e.stderr ?? e.message ?? e) };
+    }
+  };
+  const digestFor = (uid) => {
+    const r = rpcJson("digest_pending", `'${JOB}', 100`);
+    return r.ok ? (r.v.rows ?? []).find((x) => x.userId === uid) : undefined;
+  };
+  const clearDigestState = () => psql(`delete from notification_pref where user_id = '${teacherId}'; delete from push_subscription where user_id in ('${teacherId}','${studentUserId}');`);
+  psql(`update teacher_profile set city = 'Mumbai', subjects = array['Maths','Physics'], teaching_mode = 'home', is_listed = true, deleted_at = null where user_id = '${teacherId}';`);
+  clearDigestState();
+  // The real database persists between runs: drop earlier runs' fixtures so only this run's requests count.
+  psql(`delete from tutor_request where city in ('Mumbai','Delhi') or (city is null and mode = 'online');`);
+  const addReq = (subject, city, mode) =>
+    psql(`insert into tutor_request (requester_id, subject, city, mode) values ('${studentUserId}', '${subject}', ${city ? `'${city}'` : "null"}, '${mode}') returning id;`).split("\n")[0];
+  {
+    const noSecret = rpcJson("digest_pending", `null, 10`);
+    const wrong = rpcJson("digest_pending", `'${"w".repeat(40)}', 10`);
+    const short = rpcJson("digest_pending", `'abc', 10`);
+    const sub = rpcJson("push_targets_for_user", `'${"w".repeat(40)}', '${teacherId}', 'any'`);
+    check(
+      "18.1 SECURITY: every job function refuses a missing, short or wrong secret",
+      [noSecret, wrong, short, sub].every((r) => !r.ok && /not authorized/.test(r.v)),
+      [noSecret, wrong, short, sub].map((r) => String(r.v).slice(0, 40)).join(" | ")
+    );
+  }
+  {
+    const subs = psqlAs(teacherId, `select count(*) from push_subscription;`);
+    const prefs = psqlAs(teacherId, `select count(*) from notification_pref;`);
+    const secret = psqlAs(teacherId, `select count(*) from job_secret;`);
+    const fn = psqlAs(teacherId, `select digest_pending('${"w".repeat(40)}', 5);`);
+    check(
+      "18.2 SECURITY: signed-in users cannot read the notification tables, and job functions refuse a wrong secret",
+      [subs, prefs, secret].every((r) => !r.ok && /permission denied/i.test(r.out)) && !fn.ok && /not authorized/.test(fn.out),
+      [subs, prefs, secret, fn].map((r) => r.out.slice(0, 40)).join(" | ")
+    );
+  }
+  {
+    const ep = "https://fcm.googleapis.com/fcm/send/real-tier-device-1";
+    const P = "p".repeat(30);
+    const A = "a".repeat(16);
+    const bad = psqlAs(teacherId, `select save_push_subscription('http://fcm.googleapis.com/x', '${P}', '${A}', 'ua');`);
+    const ok = psqlAs(teacherId, `select save_push_subscription('${ep}', '${P}', '${A}', 'ua'); select (my_notification_prefs()->>'devices');`);
+    const many = psqlAs(
+      teacherId,
+      Array.from({ length: 7 }, (_, i) => `select save_push_subscription('https://fcm.googleapis.com/fcm/send/many-${i}', '${P}', '${A}', 'ua');`).join("\n") + `\nselect 'devices=' || (my_notification_prefs()->>'devices');`
+    );
+    const anon = psqlAs(parentUserId, `select my_notification_prefs();`);
+    check(
+      "18.3 Devices: http endpoints refused, saving works, at most 5 devices per person",
+      !bad.ok && /invalid subscription|check/i.test(bad.out) && ok.ok && /\n1\s+ROLLBACK/.test(ok.out) && many.ok && /devices=5\b/.test(many.out) && anon.ok,
+      JSON.stringify([bad.ok, bad.out.slice(0, 60), ok.ok, ok.out.slice(-12), many.ok, many.out.slice(-40), anon.ok])
+    );
+  }
+  clearDigestState();
+  let matchId = null;
+  {
+    matchId = addReq("Physics", "Mumbai", "home");
+    const row = digestFor(teacherId);
+    check(
+      "18.4 A new matching request (same subject, same city) puts the teacher in the digest with 1 request",
+      !!row && row.count === 1 && row.requests?.[0]?.id === matchId && /@realtier3\.local$/.test(row.email),
+      JSON.stringify(row)?.slice(0, 160)
+    );
+  }
+  {
+    psql(`select digest_mark_sent('${JOB}', array['${teacherId}']::uuid[]);`);
+    const after = digestFor(teacherId);
+    const today = rpcJson("digest_sent_today", `'${JOB}'`);
+    check("18.5 After the digest is sent, the same request is never emailed again, and the daily counter moves", after === undefined && today.ok && today.v >= 1, `${after} | sent today ${today.v}`);
+  }
+  {
+    // Quiet day: requests that do not fit, or are not new, must produce no digest row at all.
+    addReq("Chemistry", "Mumbai", "home"); // wrong subject
+    addReq("Physics", "Delhi", "home"); // wrong city for a home teacher
+    addReq("Physics", null, "online"); // online request, home-only teacher
+    const row = digestFor(teacherId);
+    const none = rpcJson("digest_pending", `'${JOB}', 100`);
+    check("18.6 NO ACTIVITY, NO EMAIL: requests that do not match this teacher create no digest", row === undefined && none.ok && !(none.v.rows ?? []).some((r) => r.userId === teacherId), JSON.stringify(row));
+  }
+  {
+    psql(`update teacher_profile set teaching_mode = 'both' where user_id = '${teacherId}';`);
+    const onlineFits = digestFor(teacherId);
+    psql(`update teacher_profile set teaching_mode = 'home' where user_id = '${teacherId}';`);
+    // Opting out and already replying both suppress the email, even for a good match.
+    psql(`select digest_mark_sent('${JOB}', array['${teacherId}']::uuid[]);`);
+    const fresh = addReq("Maths", "Mumbai", "home");
+    const wouldSend = digestFor(teacherId);
+    psql(`insert into tutor_request_response (request_id, teacher_id) values ('${fresh}', '${teacherId}');`);
+    const replied = digestFor(teacherId);
+    const fresh2 = addReq("Maths", "Mumbai", "home");
+    const wouldSend2 = digestFor(teacherId);
+    // Opt out the way the unsubscribe link does.
+    psql(`select set_digest_optout('${JOB}', '${teacherId}');`);
+    const optedOut = digestFor(teacherId);
+    check(
+      "18.7 Online requests reach teachers who teach online; a replied-to request and an opted-out teacher get no email",
+      !!onlineFits && !!wouldSend && wouldSend.count === 1 && replied === undefined && !!wouldSend2 && optedOut === undefined && !!fresh2,
+      `online ${!!onlineFits}, new ${wouldSend?.count}, replied ${replied}, again ${!!wouldSend2}, optedOut ${optedOut}`
+    );
+  }
+  {
+    psql(`update notification_pref set email_digest = true, digest_last_sent_at = now() - interval '5 days' where user_id = '${teacherId}';`);
+    const row = digestFor(teacherId);
+    const oldest = (row?.requests ?? []).length;
+    psql(`update teacher_profile set is_listed = false where user_id = '${teacherId}';`);
+    const unlisted = digestFor(teacherId);
+    psql(`update teacher_profile set is_listed = true where user_id = '${teacherId}';`);
+    check("18.8 Backlog is capped at 3 days; an unlisted teacher is not emailed", !!row && oldest >= 1 && unlisted === undefined, `rows ${oldest}, unlisted ${unlisted}`);
+  }
+  {
+    const P = "p".repeat(30);
+    const A = "a".repeat(16);
+    psql(`delete from notification_pref where user_id = '${studentUserId}'; delete from push_subscription where user_id = '${studentUserId}';`);
+    psql(`insert into push_subscription (user_id, endpoint, p256dh, auth) values ('${studentUserId}', 'https://fcm.googleapis.com/fcm/send/student-device', '${P}', '${A}');`);
+    psql(`update daily_streak set current_streak = 4, last_date = ((now() at time zone 'Asia/Kolkata')::date - 1) where user_id = '${studentUserId}';`);
+    const t1 = rpcJson("streak_reminder_targets", `'${JOB}', 50`);
+    const mine = t1.ok ? (t1.v ?? []).find((x) => x.userId === studentUserId) : undefined;
+    psql(`select mark_quiz_reminded('${JOB}', array['${studentUserId}']::uuid[]);`);
+    const t2 = rpcJson("streak_reminder_targets", `'${JOB}', 50`);
+    const again = t2.ok ? (t2.v ?? []).find((x) => x.userId === studentUserId) : undefined;
+    psql(`update daily_streak set last_date = ((now() at time zone 'Asia/Kolkata')::date) where user_id = '${studentUserId}';`);
+    const t3 = rpcJson("streak_reminder_targets", `'${JOB}', 50`);
+    const playedAlready = t3.ok ? (t3.v ?? []).find((x) => x.userId === studentUserId) : undefined;
+    check(
+      "18.9 Streak reminder: only a streak ending tonight, once a day, and never after the quiz is played",
+      !!mine && mine.streak === 4 && mine.subs.length === 1 && again === undefined && playedAlready === undefined,
+      `${JSON.stringify(mine)?.slice(0, 80)} | again ${again} | played ${playedAlready}`
+    );
+  }
+  {
+    psql(`delete from notification_pref where user_id = '${studentUserId}';`);
+    psql(`insert into push_subscription (user_id, endpoint, p256dh, auth) values ('${studentUserId}', 'https://fcm.googleapis.com/fcm/send/student-device', '${"p".repeat(30)}', '${"a".repeat(16)}') on conflict do nothing;`);
+    const info = rpcJson("message_notify_targets", `'${JOB}', '${realConv}', '${teacherId}'`);
+    const ok = info.ok && info.v.subs.length === 1 && /@realtier3\.local$/.test(info.v.email) && info.v.senderName === "Real Teacher";
+    psql(`insert into notification_pref (user_id, push_messages) values ('${studentUserId}', false) on conflict (user_id) do update set push_messages = false;`);
+    const off = rpcJson("message_notify_targets", `'${JOB}', '${realConv}', '${teacherId}'`);
+    const stranger = rpcJson("message_notify_targets", `'${JOB}', '${realConv}', '${parentUserId}'`);
+    check(
+      "18.10 Message alerts: the recipient's devices and email come back; a muted device list is empty; a non-participant is refused",
+      ok && off.ok && off.v.subs.length === 0 && !stranger.ok && /not a participant/.test(stranger.v),
+      `${JSON.stringify(info.v)?.slice(0, 80)} | ${String(stranger.v).slice(0, 50)}`
+    );
+  }
+  {
+    const anonSub = await makeClient().post("/api/push/subscribe", { endpoint: "https://fcm.googleapis.com/fcm/send/x1", keys: { p256dh: "p".repeat(30), auth: "a".repeat(16) } });
+    const badHost = await teacherClient.post("/api/push/subscribe", { endpoint: "https://169.254.169.254/latest", keys: { p256dh: "p".repeat(30), auth: "a".repeat(16) } });
+    const badBody = await teacherClient.post("/api/push/subscribe", { endpoint: "x" });
+    const good = await teacherClient.post("/api/push/subscribe", { endpoint: "https://fcm.googleapis.com/fcm/send/route-device", keys: { p256dh: "p".repeat(30), auth: "a".repeat(16) } });
+    const prefs = await teacherClient.get("/api/notifications/prefs");
+    const saved = await teacherClient.post("/api/notifications/prefs", { emailDigest: false, pushRequests: true, pushMessages: true, pushQuiz: false });
+    const prefs2 = await teacherClient.get("/api/notifications/prefs");
+    const off = await teacherClient.post("/api/push/unsubscribe", { endpoint: "https://fcm.googleapis.com/fcm/send/route-device" });
+    const left = psql(`select count(*) from push_subscription where endpoint = 'https://fcm.googleapis.com/fcm/send/route-device';`);
+    const acct = await teacherClient.get("/account");
+    const acctOk = acct.status === 200 && String(acct.body).includes("Alerts");
+    check(
+      "18.11 Alert routes: anonymous 401, non-push hosts refused, device saved and removed, preferences round-trip",
+      anonSub.status === 401 && badHost.status === 400 && badBody.status === 400 && good.status === 200 && prefs.body?.available === true &&
+        saved.status === 200 && prefs2.body?.prefs?.emailDigest === false && prefs2.body?.prefs?.pushQuiz === false && off.status === 200 && left === "0" && acctOk,
+      `${anonSub.status} ${badHost.status} ${badBody.status} ${good.status} ${saved.status} ${off.status} left=${left}`
+    );
+  }
+  {
+    const noAuth = await makeClient().post("/api/jobs/digest", {});
+    const wrong = await fetch(BASE + "/api/jobs/digest", { method: "POST", headers: { Authorization: "Bearer " + "x".repeat(40) } });
+    const streak = await makeClient().post("/api/jobs/streak-reminders", {});
+    const pageBad = await fetch(BASE + "/unsubscribe?t=garbage");
+    const pageText = await pageBad.text();
+    const form = new URLSearchParams({ t: "garbage" });
+    const post = await fetch(BASE + "/api/notifications/unsubscribe", { method: "POST", body: form, redirect: "manual" });
+    const manifest = await fetch(BASE + "/manifest.webmanifest");
+    const sw = await fetch(BASE + "/sw.js");
+    const icon = await fetch(BASE + "/pwa-icon/192");
+    check(
+      "18.12 Job endpoints reject callers without the secret; bad unsubscribe links change nothing; PWA files are served",
+      noAuth.status === 401 && wrong.status === 401 && streak.status === 401 && pageBad.status === 200 && /didn.t work/.test(pageText) &&
+        post.status === 303 && /status=invalid/.test(post.headers.get("location") ?? "") && manifest.status === 200 && sw.status === 200 && icon.status === 200 &&
+        (icon.headers.get("content-type") ?? "").includes("image/png"),
+      `${noAuth.status} ${wrong.status} ${streak.status} page ${pageBad.status} post ${post.status} manifest ${manifest.status} sw ${sw.status} icon ${icon.status}`
+    );
+  }
+  psql(`delete from job_secret;`);
+  clearDigestState();
 
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length} checks, ${results.length - failed.length} passed, ${failed.length} failed.`);

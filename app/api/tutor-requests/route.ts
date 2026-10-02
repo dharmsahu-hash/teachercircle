@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
+import { pushVia } from "@/lib/push";
 import { ABUSIVE_LANGUAGE_ERROR, containsAbusiveLanguage } from "@/lib/profanity";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { CONTACT_INFO_ERROR, containsContactInfo, normalizeSubject, requestPath } from "@/lib/tutorRequest";
@@ -47,6 +48,14 @@ export async function POST(req: NextRequest) {
       },
       user.token
     )) as string;
+    // Free browser alert to teachers who match. Best-effort, never blocks the post.
+    const where = v.mode === "online" ? "online" : city ? `in ${city}` : "";
+    await pushVia("push_targets_for_request", { p_request_id: id }, {
+      title: "New student request for you",
+      body: `${subject}${where ? " " + where : ""} - reply first.`,
+      url: `/tutor-requests/${id}`,
+      tag: "request",
+    });
     return NextResponse.json({ ok: true, id, path: requestPath({ id, subject, city, class: v.cls || null }) });
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not post your request. Please try again.") }, { status: 400 });
