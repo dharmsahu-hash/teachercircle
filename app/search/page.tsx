@@ -3,6 +3,7 @@ import { queryTeacherPublic } from "@/lib/teacherPublic";
 import { SearchIcon, LocationIcon } from "@/components/icons";
 import TeacherCard from "@/components/TeacherCard";
 import InviteTeacherCard from "@/components/InviteTeacherCard";
+import PostRequestCard from "@/components/PostRequestCard";
 import { getSessionUser } from "@/lib/auth";
 import { CLASSES, EXAMS, EXAM_CODES } from "@/lib/levels";
 
@@ -173,7 +174,10 @@ export default async function SearchPage({
         <>
           <p className="hint">No teachers match yet — try a different subject or city.</p>
           {page === 1 && (subject || city) && (
-            <InviteTeacherCard subject={subject} city={city} inviterId={viewer?.id ?? null} />
+            <>
+              <PostRequestCard subject={subject} city={city} />
+              <InviteTeacherCard subject={subject} city={city} inviterId={viewer?.id ?? null} />
+            </>
           )}
         </>
       )}

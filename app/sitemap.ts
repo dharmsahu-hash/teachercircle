@@ -3,6 +3,8 @@ import { getAppBaseUrl } from "@/lib/url";
 import { pg } from "@/lib/db";
 import { getDirectory } from "@/lib/directory";
 import { getAllPosts } from "@/lib/blog";
+import { listOpenRequests } from "@/lib/tutorRequestData";
+import { requestPath } from "@/lib/tutorRequest";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getAppBaseUrl();
@@ -71,5 +73,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ];
 
-  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...levelRoutes, ...blogRoutes];
+  // Growth #1: open tutor requests (expired and closed ones are not in the view).
+  // Empty, not an error, if migration 0028 has not been applied yet.
+  const { rows: openRequests } = await listOpenRequests({ limit: 200 }).catch(() => ({ rows: [] as never[] }));
+  const requestRoutes: MetadataRoute.Sitemap = [
+    { url: `${base}/tutor-requests`, changeFrequency: "daily", priority: 0.6 },
+    ...openRequests.map((r) => ({ url: `${base}${requestPath(r)}`, lastModified: r.created_at, changeFrequency: "weekly" as const, priority: 0.5 })),
+  ];
+
+  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...levelRoutes, ...requestRoutes, ...blogRoutes];
 }

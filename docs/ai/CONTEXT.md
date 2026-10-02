@@ -63,6 +63,7 @@ Migrations are ordered and append-only. Later files replace views and functions;
 | Restore lists again | `admin_restore_profile` sets `is_listed` | `0023` |
 | Favorites | `favorite_teacher` | `0024` |
 | Referrals | `users.referred_by`, `set_referred_by`, `get_referral_count` | `0025` |
+| Tutor requests | `tutor_request` (60-day expiry, status open/closed/removed), `tutor_request_response`, public view `tutor_request_public` (no requester id), functions `post_tutor_request`, `respond_to_tutor_request`, `close_my_tutor_request`, `admin_remove_tutor_request`. No write grants on the tables | `0028` |
 | Teaching mode and levels | `teacher_profile.teaching_mode` (home/online/both), `classes`, `boards`, `exams` with CHECK lists; appended to `teacher_public` | `0027` |
 | Claim listing | `claim_unclaimed_listing`, `on_auth_user_email_confirmed` trigger, `admin_unclaimed_user_ids`; FKs to user-keyed tables made `ON UPDATE CASCADE`; audit action `claim` | `0026` |
 

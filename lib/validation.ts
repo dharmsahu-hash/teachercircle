@@ -116,6 +116,23 @@ export const reviewSchema = z.object({
 });
 
 export const teacherIdSchema = z.object({ teacherId: id });
+
+// "I need a tutor" posts (migration 0028, lib/tutorRequest.ts). Content rules
+// (profanity, no contact details) are checked in the route.
+export const postTutorRequestSchema = z
+  .object({
+    subject: z.string({ message: "Please enter a subject" }).trim().min(2, "Please enter a subject").max(50, "Subject is too long"),
+    city: z.string().trim().max(80, "City is too long").nullish(),
+    cls: z.enum(CLASSES, { message: "Class must be 1 to 12" }).nullish().or(z.literal("")),
+    board: z.string().refine((b) => b === "" || BOARD_CODES.includes(b), "Unknown board").nullish(),
+    exam: z.string().refine((e) => e === "" || EXAM_CODES.includes(e), "Unknown exam").nullish(),
+    mode: z.enum(TEACHING_MODES, { message: "Choose home tuition, online, or both" }),
+    details: z.string().trim().max(500, "Please keep the details under 500 characters").nullish(),
+  })
+  .refine((v) => v.mode === "online" || Boolean(v.city && v.city.length >= 2), {
+    message: "Please enter your city, or choose online classes",
+    path: ["city"],
+  });
 export const userIdSchema = z.object({ userId: id });
 
 export const messageSchema = z.object({

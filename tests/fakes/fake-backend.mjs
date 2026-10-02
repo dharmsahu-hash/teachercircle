@@ -62,6 +62,8 @@ export function createFakeBackend() {
     gotruePasswords: new Map(), // email -> password (fake auth store)
     rate_limit_hit: new Map(), // key -> {windowStart, count}, mirrors 0021_rate_limiting.sql
     favorite_teacher: [],
+    tutor_request: [], // 0028
+    tutor_request_response: [],
   };
 
   function reset() {
@@ -82,6 +84,8 @@ export function createFakeBackend() {
     db.gotruePasswords.clear();
     db.rate_limit_hit.clear();
     db.favorite_teacher.length = 0;
+    db.tutor_request.length = 0;
+    db.tutor_request_response.length = 0;
   }
 
   function requesterFrom(req) {
@@ -647,6 +651,39 @@ export function createFakeBackend() {
         }
       }
 
+      // ---- tutor requests (0028) ----
+      const publicRequests = () =>
+        db.tutor_request
+          .filter((r) => r.status === "open" && new Date(r.expires_at) > new Date())
+          .map(({ requester_id, status, closed_at, ...r }) => ({
+            ...r,
+            response_count: db.tutor_request_response.filter((x) => x.request_id === r.id).length,
+          }));
+      if (url.pathname === "/tutor_request_public" && req.method === "GET") {
+        let rows = publicRequests().filter((r) => rowMatches(r, filters));
+        rows = applyOrder(rows, order);
+        if (limit) rows = rows.slice(0, Number(limit));
+        return json(res, 200, rows.map((r) => project(r, select)));
+      }
+      if (url.pathname === "/tutor_request" && req.method === "GET") {
+        // RLS: owner or admin only.
+        let rows = db.tutor_request.filter((r) => requester && (r.requester_id === requester.id || isAdmin(requester)));
+        rows = applyOrder(rows.filter((r) => rowMatches(r, filters)), order);
+        if (limit) rows = rows.slice(0, Number(limit));
+        return json(res, 200, rows.map((r) => project(r, select)));
+      }
+      if (url.pathname === "/tutor_request_response" && req.method === "GET") {
+        let rows = db.tutor_request_response.filter(
+          (r) =>
+            requester &&
+            (r.teacher_id === requester.id ||
+              isAdmin(requester) ||
+              db.tutor_request.some((q) => q.id === r.request_id && q.requester_id === requester.id))
+        );
+        rows = rows.filter((r) => rowMatches(r, filters));
+        return json(res, 200, rows.map((r) => project(r, select)));
+      }
+
       // ---- admin_audit_log ----
       if (url.pathname === "/admin_audit_log" && req.method === "GET") {
         if (!isAdmin(requester)) return json(res, 200, []);
@@ -661,6 +698,65 @@ export function createFakeBackend() {
         const fn = url.pathname.slice(5);
         const args = await readBody(req);
 
+        if (fn === "post_tutor_request") {
+          if (!requester) return error(res, 401, "not authorized");
+          const user = db.users.get(requester.id);
+          if (!user || !["student", "parent"].includes(user.role)) return error(res, 400, "only students and parents can post");
+          const open = db.tutor_request.filter((r) => r.requester_id === requester.id && r.status === "open" && new Date(r.expires_at) > new Date());
+          if (open.length >= 5) return error(res, 400, "too many open requests");
+          if (args.p_mode !== "online" && !args.p_city) return error(res, 400, 'new row for relation "tutor_request" violates check constraint "tutor_request_where"');
+          const now = new Date();
+          const row = {
+            id: crypto.randomUUID(),
+            requester_id: requester.id,
+            subject: String(args.p_subject).trim(),
+            city: args.p_city || null,
+            class: args.p_class || null,
+            board: args.p_board || null,
+            exam: args.p_exam || null,
+            mode: args.p_mode || "home",
+            details: args.p_details || null,
+            status: "open",
+            created_at: now.toISOString(),
+            expires_at: new Date(now.getTime() + 60 * 86400000).toISOString(),
+            closed_at: null,
+          };
+          db.tutor_request.push(row);
+          return json(res, 200, row.id);
+        }
+        if (fn === "respond_to_tutor_request") {
+          if (!requester) return error(res, 401, "not authorized");
+          const tp = db.teacher_profile.get(requester.id);
+          if (!tp || !tp.is_listed || tp.deleted_at) return error(res, 400, "only teachers can respond");
+          const r = db.tutor_request.find((q) => q.id === args.p_request_id && q.status === "open" && new Date(q.expires_at) > new Date());
+          if (!r) return error(res, 400, "request not available");
+          if (r.requester_id === requester.id || isMutuallyBlocked(requester.id, r.requester_id)) return error(res, 400, "not authorized");
+          let conv = db.conversation.find((c) => c.teacher_id === requester.id && c.requester_id === r.requester_id);
+          if (!conv) {
+            conv = { id: crypto.randomUUID(), teacher_id: requester.id, requester_id: r.requester_id, created_at: new Date().toISOString() };
+            db.conversation.push(conv);
+          }
+          if (!db.tutor_request_response.some((x) => x.request_id === r.id && x.teacher_id === requester.id)) {
+            db.tutor_request_response.push({ request_id: r.id, teacher_id: requester.id, conversation_id: conv.id, created_at: new Date().toISOString() });
+          }
+          return json(res, 200, conv.id);
+        }
+        if (fn === "close_my_tutor_request") {
+          const r = db.tutor_request.find((q) => q.id === args.p_request_id && q.requester_id === requester?.id && q.status === "open");
+          if (!r) return error(res, 400, "request not available");
+          r.status = "closed";
+          r.closed_at = new Date().toISOString();
+          return json(res, 200, undefined);
+        }
+        if (fn === "admin_remove_tutor_request") {
+          if (!isAdmin(requester)) return error(res, 400, "not authorized");
+          const r = db.tutor_request.find((q) => q.id === args.p_request_id && q.status !== "removed");
+          if (!r) return error(res, 400, "request not available");
+          r.status = "removed";
+          r.closed_at = new Date().toISOString();
+          db.admin_audit_log.push({ id: crypto.randomUUID(), actor_id: requester.id, target_table: "tutor_request", target_id: r.id, action: "delete", created_at: new Date().toISOString() });
+          return json(res, 200, undefined);
+        }
         if (fn === "set_my_role") {
           if (!requester) return error(res, 401, "not signed in");
           const user = db.users.get(requester.id);

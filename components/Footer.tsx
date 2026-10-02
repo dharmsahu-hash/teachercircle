@@ -8,6 +8,7 @@ const COLUMNS: { heading: string; links: { href: string; label: string }[] }[] =
     links: [
       { href: "/search", label: "Find a teacher" },
       { href: "/tutors", label: "Browse by city" },
+      { href: "/tutor-requests/new", label: "Post a tutor request" },
       { href: "/login", label: "Create an account" },
     ],
   },
@@ -16,6 +17,7 @@ const COLUMNS: { heading: string; links: { href: string; label: string }[] }[] =
     links: [
       { href: "/login", label: "List yourself for free" },
       { href: "/teacher/profile", label: "Manage your profile" },
+      { href: "/tutor-requests", label: "Open tutor requests" },
       { href: "/blog/get-more-students-as-a-home-tutor", label: "Get more students" },
     ],
   },
