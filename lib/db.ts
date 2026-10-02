@@ -86,6 +86,8 @@ const USER_FACING_DB_MESSAGES: Record<string, string> = {
   "too many open requests": "You already have 5 open requests. Close one before posting another.",
   "only teachers can respond": "Only listed teachers can reply to a request. Create or unpause your teacher profile first.",
   "request not available": "This request is no longer open.",
+  "quiz is not for today": "That quiz is from a previous day. Today's quiz is ready for you.",
+  "invalid streak": "That streak could not be saved.",
 };
 
 // Turns any error thrown inside a route handler into a message that is safe

@@ -1,10 +1,10 @@
 import type { MetadataRoute } from "next";
 import { getAppBaseUrl } from "@/lib/url";
-import { pg } from "@/lib/db";
-import { getDirectory } from "@/lib/directory";
+import { getDirectory, getListedTeacherIds } from "@/lib/directory";
 import { getAllPosts } from "@/lib/blog";
 import { listOpenRequests } from "@/lib/tutorRequestData";
 import { requestPath } from "@/lib/tutorRequest";
+import { addDays, DAILY_FIRST_DATE, QUIZ_LEVELS, todayIST } from "@/lib/dailyQuiz";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = getAppBaseUrl();
@@ -20,12 +20,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Only listed, non-deleted teachers are public pages worth indexing —
   // teacher_public's own definition already filters to exactly that set.
-  const teachers = (await pg(`/teacher_public?select=user_id`).catch(() => [])) as
-    | { user_id: string }[]
-    | null;
+  // (Shared cached read: lib/cache.ts.)
+  const teacherIds = await getListedTeacherIds();
 
-  const teacherRoutes: MetadataRoute.Sitemap = (teachers ?? []).map((t) => ({
-    url: `${base}/teacher/${t.user_id}`,
+  const teacherRoutes: MetadataRoute.Sitemap = teacherIds.map((id) => ({
+    url: `${base}/teacher/${id}`,
     changeFrequency: "weekly",
     priority: 0.7,
   }));
@@ -81,5 +80,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...openRequests.map((r) => ({ url: `${base}${requestPath(r)}`, lastModified: r.created_at, changeFrequency: "weekly" as const, priority: 0.5 })),
   ];
 
-  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...levelRoutes, ...requestRoutes, ...blogRoutes];
+  // TeacherCircle Daily: the landing page, today's quiz per level, and the last
+  // 14 finished days with answers (each is a real, unique page).
+  const today = todayIST();
+  const archiveDays = Array.from({ length: 14 }, (_, i) => addDays(today, -(i + 1))).filter((d) => d >= DAILY_FIRST_DATE);
+  const dailyRoutes: MetadataRoute.Sitemap = [
+    { url: `${base}/daily`, changeFrequency: "daily", priority: 0.7 },
+    ...QUIZ_LEVELS.map((l) => ({ url: `${base}/daily/${l.slug}`, changeFrequency: "daily" as const, priority: 0.6 })),
+    ...QUIZ_LEVELS.flatMap((l) => archiveDays.map((d) => ({ url: `${base}/daily/${l.slug}/${d}`, changeFrequency: "yearly" as const, priority: 0.3 }))),
+  ];
+
+  return [...staticRoutes, ...teacherRoutes, ...cityRoutes, ...citySubjectRoutes, ...levelRoutes, ...requestRoutes, ...dailyRoutes, ...blogRoutes];
 }

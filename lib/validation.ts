@@ -143,6 +143,18 @@ export const reportSchema = z.object({
   reason: z.string({ message: "Please describe the issue" }).max(1000, "Please keep the description under 1000 characters"),
 });
 
+// ---- TeacherCircle Daily (migration 0029, lib/dailyQuiz.ts) ----
+export const dailyCompleteSchema = z.object({
+  level: z.enum(["5-6", "7-8", "9-10"], { message: "Unknown quiz level" }),
+  // One answer index per question; -1 = skipped.
+  answers: z.array(z.number().int().min(-1).max(3)).length(5, "Please answer all 5 questions"),
+});
+export const dailySyncSchema = z.object({
+  current: z.number().int().min(0).max(4000),
+  best: z.number().int().min(0).max(4000),
+  last: z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, "Invalid date").nullish(),
+});
+
 // ---- billing ----
 export const submitReferenceSchema = z.object({
   transactionId: id,

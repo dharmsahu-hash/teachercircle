@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
 import { adminAddTeacherSchema, parseJsonBody } from "@/lib/validation";
+import { invalidateDirectory } from "@/lib/cache";
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin().catch(() => null);
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
       },
       admin.token
     );
+    invalidateDirectory();
     return NextResponse.json({ ok: true, userId: newId });
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not add teacher") }, { status: 400 });

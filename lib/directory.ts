@@ -1,5 +1,6 @@
 import { queryTeacherPublic } from "./teacherPublic";
 import { slugify } from "./slug";
+import { cachedRead } from "./cachedRead";
 import { classFromSlug, classSlug, EXAM_CODES, examLabel, teachesOnline } from "./levels";
 
 // G1/G3 (docs/07-growth-review-2026-09-20.md): city + subject SEO landing
@@ -36,8 +37,27 @@ export type DirectoryTeacher = {
 
 export { slugify };
 
+// Cached (lib/cache.ts). The loader THROWS on failure so an error is never
+// cached; the caller below turns it into an empty list for this request only.
+const loadListedTeachers = cachedRead(["directory", "listed"], async () => (await queryTeacherPublic<DirectoryTeacher>(`select=${SELECT}`)).rows);
+
 async function getAllListedTeachers(): Promise<DirectoryTeacher[]> {
-  return (await queryTeacherPublic<DirectoryTeacher>(`select=${SELECT}`).catch(() => ({ rows: [] }))).rows;
+  try {
+    return await loadListedTeachers();
+  } catch {
+    return [];
+  }
+}
+
+// Home page and sitemap only need a sliver of the listing; they share the
+// same cached read instead of making their own queries.
+export async function getListingStats(): Promise<{ teacherCount: number; cityCount: number }> {
+  const teachers = await getAllListedTeachers();
+  return { teacherCount: teachers.length, cityCount: new Set(teachers.map((t) => t.city).filter(Boolean)).size };
+}
+
+export async function getListedTeacherIds(): Promise<string[]> {
+  return (await getAllListedTeachers()).map((t) => t.user_id);
 }
 
 export type Directory = {
