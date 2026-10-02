@@ -1103,6 +1103,101 @@ async function runScenarios(backend) {
     const student = await studentClient.get("/tutor-requests/new?subject=Maths");
     check("23.23 The form page asks anonymous visitors to sign in and shows the form to a student", anon.status === 200 && anon.html.includes("sign in") && student.status === 200 && String(student.body).includes("Post my request"), `anon ${anon.status}, student ${student.status}`);
   }
+
+  // ---------- 24. TeacherCircle Daily quiz (migration 0029) ----------
+  const istToday = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const shiftDay = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+  const yesterday = shiftDay(istToday, -1);
+  const FIRST_DAY = "2026-10-01";
+  {
+    const { status, html: h } = await html("/daily");
+    check("24.1 /daily lists all three class levels", status === 200 && h.includes("TeacherCircle Daily") && ["class-5-6", "class-7-8", "class-9-10"].every((l) => h.includes(`/daily/${l}`)), `got ${status}`);
+  }
+  {
+    const { status, html: h } = await html("/daily/class-7-8");
+    check("24.2 Today's quiz renders its first question (readable by search engines)", status === 200 && h.includes("Class 7–8 Maths quiz") && h.includes("Question 1 of 5"), `got ${status}`);
+  }
+  {
+    const results = [];
+    for (const lvl of ["class-5-6", "class-7-8", "class-9-10"]) results.push(await html(`/daily/${lvl}/${yesterday}`));
+    check(
+      "24.3 A finished day's archive page shows every question with its answer",
+      // "<b>" so only the visible answer lines count, not the copy in Next's hidden data.
+      yesterday < FIRST_DAY || results.every((r) => r.status === 200 && (r.html.match(/<b>Answer: /g) ?? []).length === 5),
+      results.map((r) => `${r.status}/${(r.html.match(/<b>Answer: /g) ?? []).length}`).join(" ")
+    );
+  }
+  {
+    const r = await makeClient().get(`/daily/class-7-8/${istToday}`);
+    check("24.4 Today's date in the archive URL redirects to the live quiz", [307, 308].includes(r.status) && String(r.location).endsWith("/daily/class-7-8"), `got ${r.status} -> ${r.location}`);
+  }
+  {
+    const paths = [`/daily/class-7-8/${shiftDay(istToday, 1)}`, "/daily/class-7-8/2026-09-30", "/daily/class-7-8/2026-02-30", "/daily/class-7-8/tomorrow", `/daily/class-11-12/${yesterday}`, "/daily/class-11-12"];
+    const statuses = [];
+    for (const p of paths) statuses.push((await html(p)).status);
+    check("24.5 The future, dates before launch, impossible dates and unknown levels are all 404", statuses.every((x) => x === 404), statuses.join(","));
+  }
+  {
+    const ok = await fetch(BASE + "/daily/og?level=class-7-8&score=4&streak=5");
+    const buf = Buffer.from(await ok.arrayBuffer());
+    const badScore = await fetch(BASE + "/daily/og?level=class-7-8&score=9");
+    const badLevel = await fetch(BASE + "/daily/og?level=nope&score=3");
+    check(
+      "24.6 The share picture is a real, cached PNG; bad inputs are refused",
+      ok.status === 200 && (ok.headers.get("content-type") ?? "").includes("image/png") && buf.subarray(0, 4).toString("hex") === "89504e47" && /immutable/.test(ok.headers.get("cache-control") ?? "") && badScore.status === 400 && badLevel.status === 400,
+      `${ok.status} ${ok.headers.get("content-type")} ${badScore.status} ${badLevel.status}`
+    );
+  }
+  {
+    const shared = await html("/daily/class-7-8?score=4&streak=3");
+    const plain = await html("/daily/class-7-8");
+    const junk = await html("/daily/class-7-8?score=99");
+    check(
+      "24.7 A shared score link carries its own preview picture; a plain or junk link does not",
+      /og:image" content="[^"]*\/daily\/og\?level=class-7-8&amp;score=4&amp;streak=3/.test(shared.html) && !plain.html.includes("/daily/og") && !junk.html.includes("/daily/og"),
+      `${shared.status} ${plain.status} ${junk.status}`
+    );
+  }
+  {
+    const anon = await makeClient().post("/api/daily/complete", { level: "7-8", answers: [0, 0, 0, 0, 0] });
+    const anonSync = await makeClient().post("/api/daily/sync", { current: 1, best: 1, last: istToday });
+    check("24.8 Saving a streak needs a signed-in account (anonymous -> 401)", anon.status === 401 && anonSync.status === 401, `complete ${anon.status}, sync ${anonSync.status}`);
+  }
+  {
+    const first = await studentClient.post("/api/daily/complete", { level: "7-8", answers: [0, 0, 0, 0, 0] });
+    const again = await studentClient.post("/api/daily/complete", { level: "9-10", answers: [1, 1, 1, 1, 1] });
+    const row = backend.db.daily_streak.get(studentId);
+    check(
+      "24.9 A signed-in player's finished quiz is scored by the server and starts a streak; playing again the same day does not add to it",
+      first.status === 200 && first.body?.saved === true && Number.isInteger(first.body?.score) && first.body.score >= 0 && first.body.score <= 5 &&
+        first.body?.streak?.current === 1 && again.status === 200 && again.body?.streak?.current === 1 && row?.current_streak === 1 && row?.total_quizzes === 1 && row?.last_date === istToday,
+      JSON.stringify([first.body, again.body, row])
+    );
+  }
+  {
+    const short = await studentClient.post("/api/daily/complete", { level: "7-8", answers: [0, 1, 2] });
+    const badLevel = await studentClient.post("/api/daily/complete", { level: "11-12", answers: [0, 0, 0, 0, 0] });
+    const badIndex = await studentClient.post("/api/daily/complete", { level: "7-8", answers: [0, 0, 0, 0, 7] });
+    check("24.10 A malformed quiz submission is refused with a readable message", short.status === 400 && /all 5 questions/.test(short.body?.error ?? "") && badLevel.status === 400 && badIndex.status === 400, JSON.stringify([short.body, badLevel.status, badIndex.status]));
+  }
+  {
+    const max = Math.round((Date.parse(istToday + "T00:00:00Z") - Date.parse(FIRST_DAY + "T00:00:00Z")) / 86400000) + 1;
+    const tooLong = await parentClient.post("/api/daily/sync", { current: max + 1, best: max + 1, last: istToday });
+    const ok = await parentClient.post("/api/daily/sync", { current: 1, best: 1, last: istToday });
+    check(
+      "24.11 SECURITY: a browser cannot claim a streak longer than the quiz has existed; a valid one is merged",
+      tooLong.status === 400 && /could not be saved/.test(tooLong.body?.error ?? "") && ok.status === 200 && ok.body?.streak?.current === 1 && backend.db.daily_streak.get([...backend.db.users.values()].find((u) => u.email === "parent1@test.local")?.id)?.current_streak === 1,
+      JSON.stringify([tooLong.body, ok.body])
+    );
+  }
+  {
+    const xml = String((await makeClient().get("/sitemap.xml")).body);
+    check("24.12 sitemap.xml lists the quiz pages and recent archive days", xml.includes("/daily<") && xml.includes("/daily/class-7-8<") && (yesterday < FIRST_DAY || xml.includes(`/daily/class-7-8/${yesterday}`)), "missing");
+  }
+  {
+    const { html: h } = await html("/");
+    check("24.13 The header links to the quiz and the home page promotes it", h.includes('href="/daily"') && h.includes("free Maths quiz"), "missing");
+  }
 }
 
 main();

@@ -4,10 +4,12 @@ import { pg } from "@/lib/db";
 import { SUBSCRIPTION_UI_ENABLED } from "@/lib/featureToggles";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
+import StreakChip from "./StreakChip";
 import { AccountMenu, MessagesButton, MobileMenu, PrimaryNav, type HeaderUser, type NavLink } from "./HeaderNav";
 
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/search", label: "Find a teacher" },
+  { href: "/daily", label: "Daily quiz" },
   { href: "/tutors", label: "Browse" },
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
@@ -58,6 +60,7 @@ export default async function Header() {
         <PrimaryNav links={PRIMARY_LINKS} />
 
         <div className="header-actions">
+          <StreakChip />
           <ThemeToggle />
           {headerUser ? (
             <>

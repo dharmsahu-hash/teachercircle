@@ -576,6 +576,82 @@ async function main() {
     check("16.15 Contact details are refused before reaching the database", r.status === 400 && /phone numbers, emails or links/.test(r.body?.error ?? ""), JSON.stringify(r.body));
   }
 
+  // ---------- 17. TeacherCircle Daily streaks (0029) against the real database ----------
+  // The clock is moved by editing last_date, since "today" is the real IST date.
+  const dbToday = psql(`select (now() at time zone 'Asia/Kolkata')::date;`);
+  const streakRow = (uid) => psql(`select current_streak || ',' || best_streak || ',' || total_quizzes || ',' || coalesce(last_date::text,'') from daily_streak where user_id = '${uid}';`);
+  const answers5 = [0, 0, 0, 0, 0];
+  {
+    const r = await studentClient.post("/api/daily/complete", { level: "7-8", answers: answers5 });
+    check(
+      "17.1 A signed-in player's first quiz starts a streak of 1, dated with today in India",
+      r.status === 200 && r.body?.saved === true && r.body?.streak?.current === 1 && streakRow(studentUserId) === `1,1,1,${dbToday}`,
+      `${JSON.stringify(r.body)} row=${streakRow(studentUserId)} today=${dbToday}`
+    );
+  }
+  {
+    const r = await studentClient.post("/api/daily/complete", { level: "9-10", answers: answers5 });
+    check("17.2 Finishing another quiz the same day changes nothing (once a day)", r.status === 200 && streakRow(studentUserId) === `1,1,1,${dbToday}`, streakRow(studentUserId));
+  }
+  {
+    psql(`update daily_streak set last_date = last_date - 1 where user_id = '${studentUserId}';`);
+    const r = await studentClient.post("/api/daily/complete", { level: "7-8", answers: answers5 });
+    check("17.3 Playing the day after extends the streak to 2 (best 2, total 2)", r.status === 200 && r.body?.streak?.current === 2 && streakRow(studentUserId) === `2,2,2,${dbToday}`, streakRow(studentUserId));
+  }
+  {
+    psql(`update daily_streak set last_date = last_date - 3 where user_id = '${studentUserId}';`);
+    const r = await studentClient.post("/api/daily/complete", { level: "7-8", answers: answers5 });
+    check("17.4 Missing days resets the streak to 1 but keeps the best", r.status === 200 && r.body?.streak?.current === 1 && streakRow(studentUserId) === `1,2,3,${dbToday}`, streakRow(studentUserId));
+  }
+  {
+    const wrongDay = psqlAs(studentUserId, `select record_daily_quiz(((now() at time zone 'Asia/Kolkata')::date + 1), 3, '7-8');`);
+    const yesterdayQuiz = psqlAs(studentUserId, `select record_daily_quiz(((now() at time zone 'Asia/Kolkata')::date - 1), 3, '7-8');`);
+    const badScore = psqlAs(studentUserId, `select record_daily_quiz(((now() at time zone 'Asia/Kolkata')::date), 6, '7-8');`);
+    const badLevel = psqlAs(studentUserId, `select record_daily_quiz(((now() at time zone 'Asia/Kolkata')::date), 3, '1-2');`);
+    check(
+      "17.5 SECURITY: the database refuses another day's quiz, a score over 5 and an unknown level",
+      !wrongDay.ok && /quiz is not for today/.test(wrongDay.out) && !yesterdayQuiz.ok && /quiz is not for today/.test(yesterdayQuiz.out) && !badScore.ok && /invalid score/.test(badScore.out) && !badLevel.ok && /invalid level/.test(badLevel.out),
+      [wrongDay.out, badScore.out].map((o) => o.slice(0, 60)).join(" | ")
+    );
+  }
+  {
+    const other = psqlAs(parentUserId, `select 'rows=' || count(*) from daily_streak where user_id = '${studentUserId}';`);
+    const owner = psqlAs(studentUserId, `select 'rows=' || count(*) from daily_streak where user_id = '${studentUserId}';`);
+    check("17.6 SECURITY (RLS): another user cannot read a player's streak; the player can", other.ok && /rows=0\b/.test(other.out) && owner.ok && /rows=1\b/.test(owner.out), `${other.out.slice(-30)} | ${owner.out.slice(-30)}`);
+  }
+  {
+    const upd = psqlAs(studentUserId, `update daily_streak set current_streak = 999 where user_id = '${studentUserId}';`);
+    const ins = psqlAs(parentUserId, `insert into daily_streak (user_id, current_streak) values ('${parentUserId}', 50);`);
+    const del = psqlAs(studentUserId, `delete from daily_streak where user_id = '${studentUserId}';`);
+    check(
+      "17.7 SECURITY: nobody can write the table directly, so a streak can only grow through the function",
+      [upd, ins, del].every((r) => !r.ok && /permission denied/i.test(r.out)) && streakRow(studentUserId) === `1,2,3,${dbToday}`,
+      [upd, ins, del].map((r) => r.out.slice(0, 50)).join(" | ")
+    );
+  }
+  {
+    const tooLong = psqlAs(parentUserId, `select merge_daily_streak(9999, 9999, (now() at time zone 'Asia/Kolkata')::date);`);
+    const bestBelowCurrent = psqlAs(parentUserId, `select merge_daily_streak(2, 1, (now() at time zone 'Asia/Kolkata')::date);`);
+    check("17.8 SECURITY: a merge cannot claim a streak longer than the quiz has existed, or a best below the current", !tooLong.ok && /invalid streak/.test(tooLong.out) && !bestBelowCurrent.ok && /invalid streak/.test(bestBelowCurrent.out), `${tooLong.out.slice(0, 60)} | ${bestBelowCurrent.out.slice(0, 60)}`);
+  }
+  {
+    const first = await parentClient.post("/api/daily/sync", { current: 1, best: 1, last: dbToday });
+    const rowAfterFirst = streakRow(parentUserId);
+    const yday = psql(`select ((now() at time zone 'Asia/Kolkata')::date - 1);`);
+    const bigger = await parentClient.post("/api/daily/sync", { current: 2, best: 2, last: yday });
+    const stale = await parentClient.post("/api/daily/sync", { current: 1, best: 1, last: psql(`select ((now() at time zone 'Asia/Kolkata')::date - 5);`) });
+    check(
+      "17.9 Sync keeps the longer live streak (1 -> 2, last day stays today); a dead local streak adds nothing",
+      first.status === 200 && rowAfterFirst === `1,1,0,${dbToday}` && bigger.status === 200 && bigger.body?.streak?.current === 2 && streakRow(parentUserId) === `2,2,0,${dbToday}` && stale.status === 200 && streakRow(parentUserId) === `2,2,0,${dbToday}`,
+      `${rowAfterFirst} -> ${streakRow(parentUserId)}`
+    );
+  }
+  {
+    const anon = await makeClient().post("/api/daily/complete", { level: "7-8", answers: answers5 });
+    const pages = [await makeClient().get("/daily"), await makeClient().get("/daily/class-7-8"), await studentClient.get("/daily")];
+    check("17.10 Anonymous saving is refused (401); the quiz pages render on the real stack, signed in or not", anon.status === 401 && pages.every((p) => p.status === 200), `anon ${anon.status}, pages ${pages.map((p) => p.status)}`);
+  }
+
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length} checks, ${results.length - failed.length} passed, ${failed.length} failed.`);
   if (failed.length) {

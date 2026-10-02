@@ -35,6 +35,15 @@ export default async function HomePage() {
         </div>
       </div>
 
+      <Link href="/daily" className="card daily-promo">
+        <span className="daily-promo-icon" aria-hidden="true">🔥</span>
+        <span>
+          <b>Today&apos;s free Maths quiz</b>
+          <span className="hint" style={{ display: "block", margin: 0 }}>5 questions, 2 minutes, new every day. Build your streak and challenge friends.</span>
+        </span>
+        <span className="level-go">Play →</span>
+      </Link>
+
       {teacherCount > 0 && (
         <div className="stats-strip">
           <div>

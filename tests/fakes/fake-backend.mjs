@@ -64,6 +64,7 @@ export function createFakeBackend() {
     favorite_teacher: [],
     tutor_request: [], // 0028
     tutor_request_response: [],
+    daily_streak: new Map(), // 0029: user_id -> row
   };
 
   function reset() {
@@ -86,6 +87,7 @@ export function createFakeBackend() {
     db.favorite_teacher.length = 0;
     db.tutor_request.length = 0;
     db.tutor_request_response.length = 0;
+    db.daily_streak.clear();
   }
 
   function requesterFrom(req) {
@@ -684,6 +686,12 @@ export function createFakeBackend() {
         return json(res, 200, rows.map((r) => project(r, select)));
       }
 
+      // ---- daily_streak (0029): owner-only read ----
+      if (url.pathname === "/daily_streak" && req.method === "GET") {
+        const rows = [...db.daily_streak.values()].filter((r) => requester && r.user_id === requester.id && rowMatches(r, filters));
+        return json(res, 200, rows.map((r) => project(r, select)));
+      }
+
       // ---- admin_audit_log ----
       if (url.pathname === "/admin_audit_log" && req.method === "GET") {
         if (!isAdmin(requester)) return json(res, 200, []);
@@ -756,6 +764,48 @@ export function createFakeBackend() {
           r.closed_at = new Date().toISOString();
           db.admin_audit_log.push({ id: crypto.randomUUID(), actor_id: requester.id, target_table: "tutor_request", target_id: r.id, action: "delete", created_at: new Date().toISOString() });
           return json(res, 200, undefined);
+        }
+        if (fn === "record_daily_quiz" || fn === "merge_daily_streak") {
+          if (!requester) return error(res, 401, "not authorized");
+          const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+          const addDay = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+          const row = db.daily_streak.get(requester.id);
+          const shape = (r) => json(res, 200, { current: r.current_streak, best: r.best_streak, lastDate: r.last_date, total: r.total_quizzes });
+          if (fn === "record_daily_quiz") {
+            if (args.p_date !== today) return error(res, 400, "quiz is not for today");
+            if (!Number.isInteger(args.p_score) || args.p_score < 0 || args.p_score > 5) return error(res, 400, "invalid score");
+            if (!["5-6", "7-8", "9-10"].includes(args.p_level)) return error(res, 400, "invalid level");
+            if (!row) {
+              const r = { user_id: requester.id, current_streak: 1, best_streak: 1, last_date: today, total_quizzes: 1, total_correct: args.p_score };
+              db.daily_streak.set(requester.id, r);
+              return shape(r);
+            }
+            if (row.last_date !== today) {
+              row.current_streak = row.last_date === addDay(today, -1) ? row.current_streak + 1 : 1;
+              row.best_streak = Math.max(row.best_streak, row.current_streak);
+              row.total_quizzes += 1;
+              row.total_correct += args.p_score;
+              row.last_date = today;
+            }
+            return shape(row);
+          }
+          // merge_daily_streak
+          const max = Math.round((Date.parse(today + "T00:00:00Z") - Date.parse("2026-10-01T00:00:00Z")) / 86400000) + 1;
+          const { p_current, p_best, p_last } = args;
+          if (!Number.isInteger(p_current) || !Number.isInteger(p_best) || p_current < 0 || p_best < p_current || p_best > max || p_current > max) return error(res, 400, "invalid streak");
+          const cur = !p_last || p_last < addDay(today, -1) || p_last > today ? 0 : p_current;
+          if (!row) {
+            const r = { user_id: requester.id, current_streak: cur, best_streak: Math.max(p_best, cur), last_date: cur > 0 ? p_last : null, total_quizzes: 0, total_correct: 0 };
+            db.daily_streak.set(requester.id, r);
+            return shape(r);
+          }
+          const valid = row.last_date && row.last_date >= addDay(today, -1);
+          if (cur > 0 && (!valid || cur > row.current_streak)) {
+            row.current_streak = cur;
+            row.last_date = row.last_date && row.last_date > p_last ? row.last_date : p_last;
+          }
+          row.best_streak = Math.max(row.best_streak, p_best, row.current_streak);
+          return shape(row);
         }
         if (fn === "set_my_role") {
           if (!requester) return error(res, 401, "not signed in");

@@ -7,6 +7,7 @@ const COLUMNS: { heading: string; links: { href: string; label: string }[] }[] =
     heading: "Students & parents",
     links: [
       { href: "/search", label: "Find a teacher" },
+      { href: "/daily", label: "Daily Maths quiz" },
       { href: "/tutors", label: "Browse by city" },
       { href: "/tutor-requests/new", label: "Post a tutor request" },
       { href: "/login", label: "Create an account" },

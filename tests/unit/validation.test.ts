@@ -98,3 +98,25 @@ describe("schemas", () => {
     assert.ok(!submitReferenceSchema.safeParse({ transactionId: teacherId, utr: "1234567&x=y" }).success);
   });
 });
+
+// ---- TeacherCircle Daily request schemas ----
+import { dailyCompleteSchema, dailySyncSchema } from "../../lib/validation";
+
+describe("daily quiz schemas", () => {
+  test("complete: needs a known level and exactly 5 answer indexes (-1 = skipped)", () => {
+    assert.ok(dailyCompleteSchema.safeParse({ level: "7-8", answers: [0, 1, 2, 3, -1] }).success);
+    assert.ok(!dailyCompleteSchema.safeParse({ level: "11-12", answers: [0, 0, 0, 0, 0] }).success);
+    assert.ok(!dailyCompleteSchema.safeParse({ level: "7-8", answers: [0, 0, 0] }).success);
+    assert.ok(!dailyCompleteSchema.safeParse({ level: "7-8", answers: [0, 0, 0, 0, 4] }).success);
+    assert.ok(!dailyCompleteSchema.safeParse({ level: "7-8", answers: [0, 0, 0, 0, 1.5] }).success);
+  });
+
+  test("sync: real dates and sane numbers only", () => {
+    assert.ok(dailySyncSchema.safeParse({ current: 3, best: 5, last: "2026-10-02" }).success);
+    assert.ok(dailySyncSchema.safeParse({ current: 0, best: 0, last: null }).success);
+    assert.ok(dailySyncSchema.safeParse({ current: 0, best: 0 }).success);
+    for (const last of ["2026-1-2", "yesterday", "2026-10-02T00:00", ""]) assert.ok(!dailySyncSchema.safeParse({ current: 1, best: 1, last }).success, last);
+    assert.ok(!dailySyncSchema.safeParse({ current: -1, best: 1, last: "2026-10-02" }).success);
+    assert.ok(!dailySyncSchema.safeParse({ current: 1, best: 99999, last: "2026-10-02" }).success);
+  });
+});
