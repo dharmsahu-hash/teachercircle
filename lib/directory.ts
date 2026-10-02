@@ -1,4 +1,4 @@
-import { pg } from "./db";
+import { queryTeacherPublic } from "./teacherPublic";
 import { classFromSlug, classSlug, EXAM_CODES, examLabel, teachesOnline } from "./levels";
 
 // G1/G3 (docs/07-growth-review-2026-09-20.md): city + subject SEO landing
@@ -42,7 +42,7 @@ export function slugify(s: string): string {
 }
 
 async function getAllListedTeachers(): Promise<DirectoryTeacher[]> {
-  return (await pg(`/teacher_public?select=${SELECT}`).catch(() => [])) ?? [];
+  return (await queryTeacherPublic<DirectoryTeacher>(`select=${SELECT}`).catch(() => ({ rows: [] }))).rows;
 }
 
 export type Directory = {

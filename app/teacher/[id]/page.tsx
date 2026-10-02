@@ -7,6 +7,8 @@ import FavoriteButton from "@/components/FavoriteButton";
 import WhatsAppShare from "@/components/WhatsAppShare";
 import { responseTimeLabel } from "@/lib/responseTime";
 import type { Metadata } from "next";
+import { queryTeacherPublic } from "@/lib/teacherPublic";
+import { isId } from "@/lib/validation";
 import { boardLabel, classesLabel, examLabel, MODE_LABELS, type TeachingMode } from "@/lib/levels";
 
 export const dynamic = "force-dynamic";
@@ -35,10 +37,12 @@ type TeacherRow = {
 };
 
 async function getTeacher(id: string): Promise<TeacherRow | null> {
-  const rows = await pg(
-    `/teacher_public?user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count,teaching_mode,classes,boards,exams`
+  // A malformed id is a 404, never a query (it is interpolated into the filter).
+  if (!isId(id)) return null;
+  const { rows } = await queryTeacherPublic<TeacherRow>(
+    `user_id=eq.${id}&select=user_id,name,bio,subjects,city,rate_per_hour,experience_years,avg_rating,review_count,is_subscribed,avatar_url,avatar_seed,self_attested_at,avg_response_hours,replied_conversation_count,teaching_mode,classes,boards,exams`
   );
-  return Array.isArray(rows) ? rows[0] ?? null : null;
+  return rows[0] ?? null;
 }
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
