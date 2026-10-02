@@ -603,3 +603,9 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 .teacher-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0 10px; font-size: 14px; }
 .teacher-facts dt { color: var(--muted); font-weight: 600; }
 .teacher-facts dd { margin: 0; color: var(--ink); }
+
+/* "I need a tutor" posts (growth #1) */
+.request-card { display: block; text-decoration: none; color: inherit; }
+.request-card:hover { border-color: var(--accent); }
+.request-details { margin: 6px 0 0; color: var(--ink); font-size: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.request-lead { font-size: 17px; line-height: 1.6; margin: 0 0 16px; max-width: 70ch; }

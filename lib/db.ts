@@ -82,6 +82,10 @@ const USER_FACING_DB_MESSAGES: Record<string, string> = {
   "referrer not found": "That invite link isn't valid.",
   "cannot refer yourself": "You can't use your own invite link.",
   "a user with this email already exists": "A user with this email already exists.",
+  "only students and parents can post": "Only students and parents can post a tutor request. Teachers can reply to requests instead.",
+  "too many open requests": "You already have 5 open requests. Close one before posting another.",
+  "only teachers can respond": "Only listed teachers can reply to a request. Create or unpause your teacher profile first.",
+  "request not available": "This request is no longer open.",
 };
 
 // Turns any error thrown inside a route handler into a message that is safe

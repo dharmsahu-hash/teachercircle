@@ -1,4 +1,5 @@
 import { queryTeacherPublic } from "./teacherPublic";
+import { slugify } from "./slug";
 import { classFromSlug, classSlug, EXAM_CODES, examLabel, teachesOnline } from "./levels";
 
 // G1/G3 (docs/07-growth-review-2026-09-20.md): city + subject SEO landing
@@ -33,13 +34,7 @@ export type DirectoryTeacher = {
   exams?: string[] | null;
 };
 
-export function slugify(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+export { slugify };
 
 async function getAllListedTeachers(): Promise<DirectoryTeacher[]> {
   return (await queryTeacherPublic<DirectoryTeacher>(`select=${SELECT}`).catch(() => ({ rows: [] }))).rows;

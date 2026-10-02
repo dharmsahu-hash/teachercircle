@@ -961,6 +961,148 @@ async function runScenarios(backend) {
     const { status, html: h } = await html("/search?subject=Maths&minPrice=abc%26x");
     check("22.14 A malformed price filter is ignored instead of erroring", status === 200, `got ${status}`);
   }
+
+  // ---------- 23. "I need a tutor" posts (migration 0028) ----------
+  const studentEmail = "student1@test.local";
+  const studentId = [...backend.db.users.values()].find((u) => u.email === studentEmail)?.id;
+  const req1 = { subject: "maths", mode: "home", city: "Bengaluru", cls: "10", board: "cbse", exam: "", details: "Weak in algebra, 3 evenings a week." };
+  let req1Path = null;
+  let req1Id = null;
+  {
+    const r = await studentClient.post("/api/tutor-requests", req1);
+    req1Path = r.body?.path;
+    req1Id = r.body?.id;
+    check(
+      "23.1 A student posts a request -> 200 with a readable URL ending in its id",
+      r.status === 200 && /^\/tutor-requests\/maths-tutor-bengaluru-class-10-[0-9a-f-]{36}$/.test(req1Path ?? ""),
+      JSON.stringify(r.body)
+    );
+  }
+  {
+    const anon = await makeClient().post("/api/tutor-requests", req1);
+    const teach = await teacherClient.post("/api/tutor-requests", req1);
+    check("23.2 Not signed in -> 401; a teacher cannot post -> 403", anon.status === 401 && teach.status === 403, `anon ${anon.status}, teacher ${teach.status}`);
+  }
+  {
+    const { status, html: h } = await html(req1Path);
+    check(
+      "23.3 The public page shows the title and details, and nothing about who posted it",
+      status === 200 && h.includes("Maths tutor needed in Bengaluru for CBSE Class 10") && h.includes("Weak in algebra") && !h.includes(studentEmail) && !h.includes(studentId),
+      `got ${status}`
+    );
+  }
+  {
+    const a = await studentClient.post("/api/tutor-requests", { ...req1, details: "call me on 98765 43210" });
+    const b = await studentClient.post("/api/tutor-requests", { ...req1, details: "mail parent@example.com" });
+    const c = await studentClient.post("/api/tutor-requests", { ...req1, details: "my WhatsApp is the same as my phone" });
+    check(
+      "23.4 SECURITY: phone numbers, emails and WhatsApp mentions are refused in a public post",
+      [a, b, c].every((r) => r.status === 400 && /phone numbers, emails or links/.test(r.body?.error ?? "")),
+      JSON.stringify([a.body, b.body, c.body])
+    );
+  }
+  {
+    const r = await studentClient.post("/api/tutor-requests", { ...req1, details: "you are a bastard" });
+    check("23.5 Abusive language is refused", r.status === 400, `got ${r.status}`);
+  }
+  {
+    const r = await studentClient.post("/api/tutor-requests", { ...req1, city: "" });
+    check("23.6 A home-tuition request needs a city", r.status === 400 && /city/i.test(r.body?.error ?? ""), JSON.stringify(r.body));
+  }
+  {
+    const { status, html: h } = await html("/tutor-requests");
+    check("23.7 The public list shows the request", status === 200 && h.includes("Maths tutor needed in Bengaluru"), `got ${status}`);
+    const f = await html("/tutor-requests?city=Mumbai");
+    check("23.8 The list filters by city", f.status === 200 && !f.html.includes("Maths tutor needed in Bengaluru"), `got ${f.status}`);
+  }
+  {
+    const r = await makeClient().get("/sitemap.xml");
+    check("23.9 sitemap.xml lists the request", r.status === 200 && String(r.body).includes(req1Id), `got ${r.status}`);
+  }
+  let replyConversationId = null;
+  {
+    const r = await teacherClient.post(`/api/tutor-requests/${req1Id}/respond`, {});
+    replyConversationId = r.body?.conversationId;
+    const again = await teacherClient.post(`/api/tutor-requests/${req1Id}/respond`, {});
+    check(
+      "23.10 A listed teacher replies -> a conversation with the poster; replying twice reuses it",
+      r.status === 200 && !!replyConversationId && again.body?.conversationId === replyConversationId,
+      JSON.stringify([r.body, again.body])
+    );
+  }
+  {
+    const list = await studentClient.get("/api/conversations");
+    const m = await teacherClient.post(`/api/conversations/${replyConversationId}/messages`, { body: "Hello, I teach Class 10 Maths." });
+    check(
+      "23.11 The poster sees the conversation and the teacher can message in it",
+      list.status === 200 && list.body.some((c) => c.conversation_id === replyConversationId) && m.status === 200,
+      `list ${list.status}, message ${m.status}`
+    );
+  }
+  {
+    const s = await studentClient.post(`/api/tutor-requests/${req1Id}/respond`, {});
+    const anon = await makeClient().post(`/api/tutor-requests/${req1Id}/respond`, {});
+    check("23.12 Only teachers can reply (student -> 403, anonymous -> 401)", s.status === 403 && anon.status === 401, `student ${s.status}, anon ${anon.status}`);
+  }
+  {
+    const { html: h } = await html(req1Path);
+    check("23.13 The page shows the reply count", /1 teacher has replied/.test(h), "no count");
+  }
+  {
+    const bad = await teacherClient.post("/api/tutor-requests/not-an-id/respond", {});
+    const missing = await teacherClient.post("/api/tutor-requests/00000000-0000-4000-8000-000000000000/respond", {});
+    check("23.14 A malformed id -> 400; an unknown request -> a friendly 400", bad.status === 400 && missing.status === 400 && missing.body?.error === "This request is no longer open.", JSON.stringify([bad.body, missing.body]));
+  }
+  {
+    const other = await parentClient.post(`/api/tutor-requests/${req1Id}/close`, {});
+    check("23.15 SECURITY: someone else cannot close the poster's request", other.status === 400 && other.body?.error === "This request is no longer open.", JSON.stringify(other.body));
+    const own = await studentClient.post(`/api/tutor-requests/${req1Id}/close`, {});
+    const { status } = await html(req1Path);
+    const sm = String((await makeClient().get("/sitemap.xml")).body);
+    check("23.16 The poster closes it -> the page 404s and it leaves the sitemap", own.status === 200 && status === 404 && !sm.includes(req1Id), `close ${own.status}, page ${status}`);
+  }
+  let req2Id = null;
+  {
+    const r = await studentClient.post("/api/tutor-requests", { subject: "Physics", mode: "online", city: "", cls: "12", board: "", exam: "neet", details: "" });
+    req2Id = r.body?.id;
+    check("23.17 An online request may omit the city", r.status === 200 && /physics-tutor-online-class-12-/.test(r.body?.path ?? ""), JSON.stringify(r.body));
+  }
+  {
+    const non = await studentClient.post(`/api/admin/tutor-requests/${req2Id}/remove`, {});
+    const ok = await adminClient.post(`/api/admin/tutor-requests/${req2Id}/remove`, {});
+    const audit = backend.db.admin_audit_log.filter((a) => a.target_table === "tutor_request" && a.target_id === req2Id);
+    const { status } = await html(`/tutor-requests/x-${req2Id}`);
+    check(
+      "23.18 Only an admin can remove a request; removal is audited and the page 404s",
+      non.status === 403 && ok.status === 200 && audit.length === 1 && status === 404,
+      `non ${non.status}, admin ${ok.status}, audit ${audit.length}, page ${status}`
+    );
+  }
+  {
+    const r = await studentClient.post("/api/tutor-requests", { subject: "Chemistry", mode: "both", city: "Pune", cls: "", board: "", exam: "", details: "" });
+    const fourth = await studentClient.post("/api/tutor-requests", { subject: "Biology", mode: "both", city: "Pune", cls: "", board: "", exam: "", details: "" });
+    check("23.19 Posting is rate limited (the 4th request in a day -> 429)", r.status === 200 && fourth.status === 429, `third ${r.status}, fourth ${fourth.status}`);
+  }
+  {
+    const row = backend.db.tutor_request.find((q) => q.subject === "Chemistry");
+    row.expires_at = new Date(Date.now() - 1000).toISOString();
+    const { status } = await html(`/tutor-requests/x-${row.id}`);
+    const sm = String((await makeClient().get("/sitemap.xml")).body);
+    check("23.20 A request past its 60 days is gone from its page and the sitemap", status === 404 && !sm.includes(row.id), `page ${status}`);
+  }
+  {
+    const long = new Date(backend.db.tutor_request[0].expires_at).getTime() - new Date(backend.db.tutor_request[0].created_at).getTime();
+    check("23.21 Requests are created with a 60-day expiry", Math.round(long / 86400000) === 60, `${long / 86400000} days`);
+  }
+  {
+    const { status, html: h } = await html("/search?subject=Sanskrit&city=Nowhereville");
+    check("23.22 An empty search offers a prefilled 'Post a tutor request'", status === 200 && h.includes("/tutor-requests/new?subject=Sanskrit&amp;city=Nowhereville"), `got ${status}`);
+  }
+  {
+    const anon = await html("/tutor-requests/new");
+    const student = await studentClient.get("/tutor-requests/new?subject=Maths");
+    check("23.23 The form page asks anonymous visitors to sign in and shows the form to a student", anon.status === 200 && anon.html.includes("sign in") && student.status === 200 && String(student.body).includes("Post my request"), `anon ${anon.status}, student ${student.status}`);
+  }
 }
 
 main();

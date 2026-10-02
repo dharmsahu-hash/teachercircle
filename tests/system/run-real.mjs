@@ -35,6 +35,26 @@ function psql(sql) {
   return execSync(cmd, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
 }
 
+// Runs SQL as the `authenticated` database role with auth.uid() = userId, the
+// way PostgREST would, and rolls everything back. SQL goes in on stdin, so no
+// shell quoting. Returns { ok, out } where out is stdout or the error text.
+function psqlAs(userId, sql) {
+  const input = `begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '${userId}')::text, true);
+${sql}
+rollback;`;
+  try {
+    const out = execSync(
+      "docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U teachercircle -d postgres -t -A",
+      { cwd: REPO_ROOT, encoding: "utf8", input, stdio: ["pipe", "pipe", "pipe"] }
+    );
+    return { ok: true, out: out.trim() };
+  } catch (err) {
+    return { ok: false, out: `${err.stderr ?? ""}${err.message ?? ""}` };
+  }
+}
+
 function decodeJwt(token) {
   const payload = token.split(".")[1];
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
@@ -435,6 +455,125 @@ async function main() {
       r.status === 200 && String(r.body).includes("Real Teacher") && r2.status === 200,
       `online ${r.status}, jee ${r2.status}`
     );
+  }
+
+  // ---------- 16. "I need a tutor" posts (0028) against the real database ----------
+  const studentUserId = studentClient.userId();
+  const parentUserId = parentClient.userId();
+  const adminUserId = adminClient.userId();
+  // Letters only: a run of 8+ digits would (correctly) be refused as a phone number.
+  const MARK = String(RUN_ID).replace(/[0-9]/g, (d) => "abcdefghij"[Number(d)]);
+  const reqBody = { subject: "Maths", mode: "home", city: "Indore", cls: "10", board: "cbse", exam: "", details: `Real request ${MARK}` };
+  let realReqId = null;
+  {
+    const r = await studentClient.post("/api/tutor-requests", reqBody);
+    realReqId = r.body?.id;
+    check("16.1 A student posts a request through the real post_tutor_request()", r.status === 200 && !!realReqId, JSON.stringify(r.body));
+  }
+  {
+    const cols = psql(`select count(*) from information_schema.columns where table_name = 'tutor_request_public' and column_name in ('requester_id','status');`);
+    const page = await makeClient().get("/tutor-requests");
+    check(
+      "16.2 SECURITY: the public view has no requester_id column, and an anonymous visitor sees the request",
+      cols === "0" && page.status === 200 && String(page.body).includes(`Real request ${MARK}`) && !String(page.body).includes(studentUserId),
+      `columns=${cols}, page ${page.status}`
+    );
+  }
+  {
+    const r = psqlAs(
+      studentUserId,
+      `insert into tutor_request (requester_id, subject, city, mode) values ('${studentUserId}', 'Maths', 'Indore', 'home');`
+    );
+    check("16.3 SECURITY: a direct INSERT into tutor_request is refused (only the function can post)", !r.ok && /permission denied/i.test(r.out), r.out.slice(0, 160));
+  }
+  {
+    const r = psqlAs(
+      teacherId,
+      `select post_tutor_request('Maths', 'Indore', null, null, null, 'home', null);`
+    );
+    check("16.4 The database refuses a teacher posting (not just the app)", !r.ok && /only students and parents can post/.test(r.out), r.out.slice(0, 160));
+  }
+  {
+    const r = psqlAs(
+      studentUserId,
+      Array.from({ length: 6 }, () => `select post_tutor_request('Maths', 'Indore', null, null, null, 'home', null);`).join("\n")
+    );
+    // This student already has 1 open request, so the 5th insert here is the 6th overall.
+    check("16.5 At most 5 open requests per poster, enforced in the database", !r.ok && /too many open requests/.test(r.out), r.out.slice(0, 160));
+  }
+  {
+    const r = psqlAs(
+      parentUserId,
+      `select respond_to_tutor_request('${realReqId}');`
+    );
+    check("16.6 The database refuses a non-teacher replying", !r.ok && /only teachers can respond/.test(r.out), r.out.slice(0, 160));
+  }
+  let realConv = null;
+  {
+    const r = await teacherClient.post(`/api/tutor-requests/${realReqId}/respond`, {});
+    realConv = r.body?.conversationId;
+    const row = psql(`select teacher_id || ',' || requester_id from conversation where id = '${realConv}';`);
+    const count = psql(`select response_count from tutor_request_public where id = '${realReqId}';`);
+    check(
+      "16.7 A teacher's reply creates the conversation with the poster and counts as a response",
+      r.status === 200 && row === `${teacherId},${studentUserId}` && count === "1",
+      `status ${r.status}, row ${row}, count ${count}`
+    );
+  }
+  {
+    const m = await teacherClient.post(`/api/conversations/${realConv}/messages`, { body: "Hello from the reply thread." });
+    const list = await studentClient.get("/api/conversations");
+    check(
+      "16.8 Both sides can use that conversation (RLS: message send + the poster's inbox)",
+      m.status === 200 && list.status === 200 && list.body.some((c) => c.conversation_id === realConv),
+      `message ${m.status}, inbox ${list.status}`
+    );
+  }
+  {
+    const r = psqlAs(parentUserId, `select close_my_tutor_request('${realReqId}');`);
+    check("16.9 SECURITY: another user cannot close the poster's request", !r.ok && /request not available/.test(r.out), r.out.slice(0, 160));
+  }
+  {
+    const other = psqlAs(parentUserId, `select 'rows=' || count(*) from tutor_request where id = '${realReqId}';`);
+    const owner = psqlAs(studentUserId, `select 'rows=' || count(*) from tutor_request where id = '${realReqId}';`);
+    check(
+      "16.10 SECURITY (RLS): another user cannot read the poster's row in the base table; the poster can",
+      other.ok && /rows=0\b/.test(other.out) && owner.ok && /rows=1\b/.test(owner.out),
+      `other: ${other.out.slice(-40)} | owner: ${owner.out.slice(-40)}`
+    );
+  }
+  {
+    const r = psqlAs(studentUserId, `select admin_remove_tutor_request('${realReqId}');`);
+    check("16.11 SECURITY: a non-admin cannot remove a request", !r.ok && /not authorized/.test(r.out), r.out.slice(0, 160));
+  }
+  {
+    // A request the student blocks the teacher for: the teacher may not reply.
+    const second = await studentClient.post("/api/tutor-requests", { ...reqBody, subject: "Physics", details: `Second ${MARK}` });
+    psql(`insert into blocked_user (blocker_id, blocked_id) values ('${studentUserId}', '${teacherId}') on conflict do nothing;`);
+    const blocked = await teacherClient.post(`/api/tutor-requests/${second.body?.id}/respond`, {});
+    psql(`delete from blocked_user where blocker_id = '${studentUserId}' and blocked_id = '${teacherId}';`);
+    check("16.12 A teacher the poster has blocked cannot reply", second.status === 200 && blocked.status === 400, `post ${second.status}, reply ${blocked.status}: ${JSON.stringify(blocked.body)}`);
+
+    // Expiry: past expires_at drops it from the public view and refuses replies.
+    psql(`update tutor_request set expires_at = now() - interval '1 minute' where id = '${second.body?.id}';`);
+    const inView = psql(`select count(*) from tutor_request_public where id = '${second.body?.id}';`);
+    const late = await teacherClient.post(`/api/tutor-requests/${second.body?.id}/respond`, {});
+    check("16.13 An expired request leaves the public view and cannot be replied to", inView === "0" && late.status === 400, `inView ${inView}, reply ${late.status}`);
+  }
+  {
+    const ok = await adminClient.post(`/api/admin/tutor-requests/${realReqId}/remove`, {});
+    const status = psql(`select status from tutor_request where id = '${realReqId}';`);
+    const audit = psql(`select count(*) from admin_audit_log where target_id = '${realReqId}' and target_table = 'tutor_request' and action = 'delete' and actor_id = '${adminUserId}';`);
+    const page = await makeClient().get("/tutor-requests");
+    check(
+      "16.14 An admin removes a request: status removed, audited, gone from the public list",
+      ok.status === 200 && status === "removed" && audit === "1" && !String(page.body).includes(`Real request ${MARK}`),
+      `admin ${ok.status}, status ${status}, audit ${audit}`
+    );
+  }
+  {
+    const r = await studentClient.post("/api/tutor-requests", { ...reqBody, details: "call 98765 43210" });
+    check("16.15 Contact details are refused before reaching the database", r.status === 400 && /phone numbers, emails or links/.test(r.body?.error ?? ""), JSON.stringify(r.body));
   }
 
   const failed = results.filter((r) => !r.pass);
