@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { pg } from "@/lib/db";
+import { queryTeacherPublic } from "@/lib/teacherPublic";
 import { SearchIcon, LocationIcon } from "@/components/icons";
 import TeacherCard from "@/components/TeacherCard";
 import InviteTeacherCard from "@/components/InviteTeacherCard";
@@ -70,7 +70,7 @@ export default async function SearchPage({
   filters.push(`limit=${PAGE_SIZE + 1}`);
   filters.push(`offset=${(page - 1) * PAGE_SIZE}`);
 
-  const rows: DirectoryTeacher[] = (await pg(`/teacher_public?${filters.join("&")}`)) ?? [];
+  const { rows, levelsAvailable } = await queryTeacherPublic<DirectoryTeacher>(filters.join("&"));
   const teachers = rows.slice(0, PAGE_SIZE);
   const hasNextPage = rows.length > PAGE_SIZE;
   // Only needed for the invite card on an empty result.
@@ -162,6 +162,9 @@ export default async function SearchPage({
         </div>
       </div>
 
+      {!levelsAvailable && (mode || cls || exam) && (
+        <p className="hint">Online, class and exam filters are temporarily unavailable, so these results are not filtered by them.</p>
+      )}
       <h2>
         {teachers.length} teacher{teachers.length === 1 ? "" : "s"}
         {page === 1 && !hasNextPage ? " found" : " on this page"}
