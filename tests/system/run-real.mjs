@@ -30,6 +30,18 @@ function check(name, pass, detail) {
   console.log(`[${pass ? "PASS" : "FAIL"}] ${name}${detail ? " — " + detail : ""}`);
 }
 
+// A pooled connection that the app closed while the suite was busy with
+// psql (Node closes idle sockets after 5 s) fails once with "fetch failed";
+// that is not an app fault, so retry once on a fresh connection.
+async function fetchRetry(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    if (!/fetch failed/.test(String(err))) throw err;
+    return await fetch(url, init);
+  }
+}
+
 function psql(sql) {
   const cmd = `docker compose exec -T postgres psql -h 127.0.0.1 -U teachercircle -d postgres -t -A -c "${sql.replace(/"/g, '\\"')}"`;
   return execSync(cmd, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
@@ -72,7 +84,7 @@ function makeClient() {
     }
     const headers = { "Content-Type": "application/json" };
     if (cookie) headers["Cookie"] = cookie;
-    const res = await fetch(BASE + path, {
+    const res = await fetchRetry(BASE + path, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -826,15 +838,15 @@ async function main() {
   }
   {
     const noAuth = await makeClient().post("/api/jobs/digest", {});
-    const wrong = await fetch(BASE + "/api/jobs/digest", { method: "POST", headers: { Authorization: "Bearer " + "x".repeat(40) } });
+    const wrong = await fetchRetry(BASE + "/api/jobs/digest", { method: "POST", headers: { Authorization: "Bearer " + "x".repeat(40) } });
     const streak = await makeClient().post("/api/jobs/streak-reminders", {});
-    const pageBad = await fetch(BASE + "/unsubscribe?t=garbage");
+    const pageBad = await fetchRetry(BASE + "/unsubscribe?t=garbage");
     const pageText = await pageBad.text();
     const form = new URLSearchParams({ t: "garbage" });
-    const post = await fetch(BASE + "/api/notifications/unsubscribe", { method: "POST", body: form, redirect: "manual" });
-    const manifest = await fetch(BASE + "/manifest.webmanifest");
-    const sw = await fetch(BASE + "/sw.js");
-    const icon = await fetch(BASE + "/pwa-icon/192");
+    const post = await fetchRetry(BASE + "/api/notifications/unsubscribe", { method: "POST", body: form, redirect: "manual" });
+    const manifest = await fetchRetry(BASE + "/manifest.webmanifest");
+    const sw = await fetchRetry(BASE + "/sw.js");
+    const icon = await fetchRetry(BASE + "/pwa-icon/192");
     check(
       "18.12 Job endpoints reject callers without the secret; bad unsubscribe links change nothing; PWA files are served",
       noAuth.status === 401 && wrong.status === 401 && streak.status === 401 && pageBad.status === 200 && /didn.t work/.test(pageText) &&
