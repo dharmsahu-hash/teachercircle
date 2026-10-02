@@ -165,6 +165,55 @@ logs show what was requested.
 Also check **Authentication → Email Templates → Confirm signup**: the link must
 use `{{ .ConfirmationURL }}`, not a hand-built `{{ .SiteURL }}/...` link.
 
+### Step 4c — Custom domain (teacherscircle.co.in) and one public address
+
+Goal: visitors only ever see `https://teacherscircle.co.in`; the `*.vercel.app`
+address redirects there (308, permanent) and is never shown in links, search
+results, emails or the sitemap. **Do the steps in this order**: the redirect is
+switched on by the last Vercel step, and it must point at a domain that already
+works.
+
+1. **Vercel → Project → Settings → Domains.** Add `teacherscircle.co.in` and
+   `www.teacherscircle.co.in`. Make `teacherscircle.co.in` the production domain and
+   set `www` to **Redirect to teacherscircle.co.in (308)**. Vercel shows the exact DNS
+   records to create (normally an `A` record for the apex and a `CNAME` for `www`);
+   use the values the dashboard shows, not ones copied from elsewhere.
+2. **DNS, at the registrar that manages teacherscircle.co.in.** Create those records.
+   Wait until both domains show **Valid Configuration** in Vercel and
+   `https://teacherscircle.co.in` opens the site. Vercel issues the HTTPS certificate
+   by itself; the app already sends HSTS.
+3. **Only now: Vercel → Settings → Environment Variables (Production)** set
+   `APP_HOSTNAME=teacherscircle.co.in` (no `https://`), then **redeploy**. From that
+   deploy on, canonical tags, the sitemap, robots.txt, share links and confirmation
+   emails use the new domain, and `middleware.ts` redirects every `*.vercel.app`
+   request to it. Preview deployments (the `stage` branch) keep their own URLs.
+4. **Supabase → Authentication → URL Configuration.** Set **Site URL** to
+   `https://teacherscircle.co.in` and add `https://teacherscircle.co.in/auth/callback`
+   under **Redirect URLs** (Step 4b explains why). Keep the old `vercel.app` entry for
+   about 30 days so confirmation emails already sent still work; they redirect on.
+5. **Google services.** Search Console: add a **Domain** property for
+   `teacherscircle.co.in` (DNS TXT record) and submit `https://teacherscircle.co.in/sitemap.xml`.
+   AdSense: add `teacherscircle.co.in` under *Sites* (`/ads.txt` is served by the app).
+   Analytics: add the domain to the existing data stream. Google sign-in needs no change:
+   its redirect URI is the Supabase callback, not the app.
+6. **Email (recommended).** Brevo → *Senders, Domains & Dedicated IPs* → authenticate
+   `teacherscircle.co.in` (add the SPF/DKIM records Brevo gives you, plus a DMARC TXT
+   record at `_dmarc`), then set `EMAIL_SENDER_ADDRESS=noreply@teacherscircle.co.in`.
+   Mail from your own authenticated domain lands in inboxes far more reliably.
+7. **Keep previews private.** Vercel → Settings → Deployment Protection: leave
+   *Vercel Authentication* on, so `stage` preview URLs are not open to the public.
+
+Rollback: set `DISABLE_CANONICAL_REDIRECT=1` (or clear `APP_HOSTNAME`) and redeploy;
+the redirect stops and the `vercel.app` address serves normally again.
+
+Good to know:
+- People signed in on the old address sign in once more on the new one (session
+  cookies belong to one hostname).
+- The Supabase project address (`…supabase.co`) is visible during "Continue with
+  Google". Hiding it needs Supabase's paid *Custom Domain* add-on; it is optional.
+- `/api/health` and every other path redirect too, so point uptime monitors at the
+  new domain.
+
 ### Step 5 — Verify
 
 ```bash
@@ -255,6 +304,8 @@ meaningful EU traffic ever shows up in Analytics.
 | Every request to Supabase returns 401 | Missing `apikey` header | Confirm `SUPABASE_API_KEY` is set in Vercel — required on every `/rest/v1` and `/auth/v1` call, bearer token or not |
 | Google sign-in errors after redirect | Redirect URI mismatch | Must exactly match `https://<project-ref>.supabase.co/auth/v1/callback` in both Google Console and Supabase's Google provider settings |
 | Email/password signup succeeds but never logs the user in | Supabase's `mailer_autoconfirm` defaults to `false` (unlike local dev) | Expected — the UI now shows "check your email" (see `lib/gotrue.ts`'s `SignUpResult`); confirm the emailed link before signing in |
+| `teachercircle.vercel.app` still opens instead of redirecting | `APP_HOSTNAME` is not set (or not a custom domain) in the **Production** environment, or the project was not redeployed after setting it | Step 4c point 3. The redirect only runs on production deployments and only when a custom domain is configured |
+| `ERR_TOO_MANY_REDIRECTS` on the new domain | Vercel's Domains page redirects the apex to `www` while `APP_HOSTNAME` names the apex (or the reverse) | Make both agree: one canonical host (Step 4c point 1), the other redirects to it |
 | Confirmation email links to `localhost` | Supabase **Site URL** is still `http://localhost:3000`, and/or the app's `/auth/callback` is not on **Redirect URLs**, so Supabase ignored the app's `redirect_to` | Fix both in Step 4b, then the user clicks **Resend confirmation email** on `/login`. Their old link may already have confirmed the account (Supabase verifies before redirecting), so also tell them to just try signing in. Vercel logs show `auth: confirmation email redirect_to host = ...`; if that is the public host, the app side is right |
 | App works, then goes slow/404s after a week of no traffic | Free Supabase project auto-paused | First request wakes it in 10-30s; set up the Step 7 keep-alive to avoid this going forward |
 | `PGRST202 ... Could not find the function` from an RPC that definitely exists in a migration | PostgREST's schema cache hasn't been reloaded since that migration was applied | Run `NOTIFY pgrst, 'reload schema';` again — see the callout in Step 2 |

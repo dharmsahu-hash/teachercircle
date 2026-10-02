@@ -1,6 +1,10 @@
 import type { MetadataRoute } from "next";
 import { getAppBaseUrl } from "@/lib/url";
 
+// Rendered per request, not once at build time: the sitemap URL must follow
+// the live domain setting (APP_HOSTNAME), never whatever the build saw.
+export const dynamic = "force-dynamic";
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
