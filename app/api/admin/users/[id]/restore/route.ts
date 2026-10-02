@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
 import { invalidIdResponse, isId } from "@/lib/validation";
+import { invalidateDirectory } from "@/lib/cache";
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const admin = await requireAdmin().catch(() => null);
@@ -10,6 +11,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   try {
     await pgRpc("admin_restore_profile", { target_user_id: params.id }, admin.token);
+    invalidateDirectory();
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not restore this profile") }, { status: 400 });

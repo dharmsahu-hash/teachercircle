@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAppBaseUrl } from "@/lib/url";
-import { pg } from "@/lib/db";
-import { getDirectory } from "@/lib/directory";
+import { getDirectory, getListedTeacherIds } from "@/lib/directory";
 import { getAllPosts } from "@/lib/blog";
 import { listOpenRequests } from "@/lib/tutorRequestData";
 import { requestPath } from "@/lib/tutorRequest";
@@ -20,12 +19,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Only listed, non-deleted teachers are public pages worth indexing —
   // teacher_public's own definition already filters to exactly that set.
-  const teachers = (await pg(`/teacher_public?select=user_id`).catch(() => [])) as
-    | { user_id: string }[]
-    | null;
+  // (Shared cached read: lib/cache.ts.)
+  const teacherIds = await getListedTeacherIds();
 
-  const teacherRoutes: MetadataRoute.Sitemap = (teachers ?? []).map((t) => ({
-    url: `${base}/teacher/${t.user_id}`,
+  const teacherRoutes: MetadataRoute.Sitemap = teacherIds.map((id) => ({
+    url: `${base}/teacher/${id}`,
     changeFrequency: "weekly",
     priority: 0.7,
   }));

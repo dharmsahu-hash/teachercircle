@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
-import { pg } from "@/lib/db";
+import { getListingStats } from "@/lib/directory";
 
 // Every page in this app reflects live DB/session state — there is no
 // benefit to static generation here, and forcing dynamic rendering also
@@ -18,10 +18,8 @@ export default async function HomePage() {
   const user = await getSessionUser().catch(() => null);
   if (user && user.role === null) redirect("/onboarding/role");
 
-  const listings: { city: string | null }[] =
-    (await pg(`/teacher_public?select=city`).catch(() => [])) ?? [];
-  const teacherCount = listings.length;
-  const cityCount = new Set(listings.map((l) => l.city).filter(Boolean)).size;
+  // Shared cached read (lib/cache.ts), not a fresh query per visitor.
+  const { teacherCount, cityCount } = await getListingStats();
 
   return (
     <div>

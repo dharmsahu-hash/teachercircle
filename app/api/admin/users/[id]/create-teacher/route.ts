@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
 import { adminCreateTeacherSchema, invalidIdResponse, isId, parseJsonBody } from "@/lib/validation";
+import { invalidateDirectory } from "@/lib/cache";
 
 // FR-21: admin can create a profile on behalf of an already-registered user
 // who hasn't completed onboarding. Deliberately does NOT create a login
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { target_user_id: params.id, p_name: name, p_city: city },
       admin.token
     );
+    invalidateDirectory();
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not create teacher profile") }, { status: 400 });

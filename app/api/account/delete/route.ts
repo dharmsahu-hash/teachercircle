@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pgRpc } from "@/lib/db";
 import { clearSessionCookie } from "@/lib/session";
+import { invalidateDirectory } from "@/lib/cache";
 
 export async function POST() {
   const user = await requireSession().catch(() => null);
@@ -12,5 +13,6 @@ export async function POST() {
   // db/migrations/0005_profile_lifecycle_admin.sql.
   await pgRpc("set_my_deleted", {}, user.token);
   clearSessionCookie();
+  invalidateDirectory();
   return NextResponse.json({ ok: true });
 }

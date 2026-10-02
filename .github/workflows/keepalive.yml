@@ -1,0 +1,37 @@
+name: Keep-alive and uptime check
+
+# Free tiers pause a database after about a week without activity, and nobody
+# notices an outage until a visitor complains. Once a day this calls the
+# site's own health check, which reads the database and the sign-in service
+# (app/api/health, lib/health.ts), so:
+#  - the Supabase project never auto-pauses;
+#  - if the site is down or degraded the run fails and GitHub emails you.
+# Scheduled workflows run from the default branch (main).
+on:
+  schedule:
+    - cron: "17 3 * * *" # 08:47 IST
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check /api/health
+        env:
+          # Set the repository variable SITE_URL (Settings -> Secrets and
+          # variables -> Actions -> Variables) to https://teacherscircle.co.in
+          # once the domain is live; until then the vercel.app address is used.
+          SITE_URL: ${{ vars.SITE_URL || 'https://teachercircle.vercel.app' }}
+        run: |
+          for attempt in 1 2 3; do
+            code=$(curl -sL -o health.json -w '%{http_code}' --max-time 30 "$SITE_URL/api/health" || echo 000)
+            echo "attempt $attempt: HTTP $code"
+            cat health.json 2>/dev/null; echo
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "::error::Site health check failed ($SITE_URL/api/health)"
+          exit 1

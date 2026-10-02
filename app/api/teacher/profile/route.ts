@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pg, publicErrorMessage } from "@/lib/db";
 import { parseJsonBody, teacherProfileSchema } from "@/lib/validation";
+import { invalidateDirectory } from "@/lib/cache";
 
 export async function GET() {
   const user = await requireSession().catch(() => null);
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
         token: user.token,
         body: payload,
       });
+      invalidateDirectory();
       return NextResponse.json(Array.isArray(rows) ? rows[0] : rows);
     }
     const rows = await pg(`/teacher_profile`, {
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
       token: user.token,
       body: { user_id: user.id, ...payload },
     });
+    invalidateDirectory();
     return NextResponse.json(Array.isArray(rows) ? rows[0] : rows);
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not save your profile. Please check the required fields.") }, { status: 400 });
