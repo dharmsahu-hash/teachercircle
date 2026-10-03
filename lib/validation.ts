@@ -155,6 +155,19 @@ export const dailySyncSchema = z.object({
   last: z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, "Invalid date").nullish(),
 });
 
+// ---- notifications ----
+export const pushSubscribeSchema = z.object({
+  endpoint: z.string().min(10).max(600),
+  keys: z.object({ p256dh: z.string().min(20).max(200), auth: z.string().min(8).max(100) }),
+});
+export const pushUnsubscribeSchema = z.object({ endpoint: z.string().min(10).max(600) });
+export const notificationPrefsSchema = z.object({
+  emailDigest: z.boolean(),
+  pushRequests: z.boolean(),
+  pushMessages: z.boolean(),
+  pushQuiz: z.boolean(),
+});
+
 // ---- billing ----
 export const submitReferenceSchema = z.object({
   transactionId: id,

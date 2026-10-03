@@ -3,6 +3,8 @@ import { requireSession } from "@/lib/auth";
 import { pg, pgRpc, PostgrestError } from "@/lib/db";
 import { containsAbusiveLanguage, ABUSIVE_LANGUAGE_ERROR } from "@/lib/profanity";
 import { sendEmail } from "@/lib/email";
+import { getJobSecret } from "@/lib/jobSecret";
+import { sendPushToSubs, type PushSub } from "@/lib/push";
 import { getAppBaseUrl } from "@/lib/url";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { invalidIdResponse, isId, messageSchema, parseJsonBody } from "@/lib/validation";
@@ -59,24 +61,49 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
     const message = Array.isArray(rows) ? rows[0] : rows;
 
-    // Best-effort: notifying the other participant must never fail or
-    // delay the send itself. get_conversation_partner_email() is the same
-    // SECURITY DEFINER pattern as reveal_teacher_contact() — `users` has no
-    // read policy beyond your own row, so this is the only RLS-safe way to
-    // get the recipient's address server-side.
+    // Best-effort: notifying the other participant must never fail or delay
+    // the send itself. Push is free, so it goes first. An email (paid at
+    // scale) is sent only when the recipient has no device registered AND
+    // this is the first unread message from this sender, so a burst of chat
+    // is one email at most. message_notify_targets() is secret-guarded; the
+    // older per-message email stays as the fallback if migration 0030 or the
+    // job secret is not set up yet.
     try {
-      const partnerEmail = await pgRpc(
-        "get_conversation_partner_email",
-        { p_conversation_id: params.id },
-        user.token
-      );
-      if (partnerEmail) {
-        const link = `${getAppBaseUrl()}/messages/${params.id}`;
-        await sendEmail(
-          partnerEmail,
-          "New message on TeacherCircle",
-          `<p>You have a new message waiting on TeacherCircle.</p><p><a href="${link}">View &amp; reply</a></p>`
-        );
+      const secret = getJobSecret();
+      const info = secret
+        ? ((await pgRpc("message_notify_targets", { p_secret: secret, p_conversation_id: params.id, p_sender_id: user.id }).catch(() => null)) as
+            | { email: string | null; senderName: string; subs: PushSub[]; unreadFromSender: number }
+            | null)
+        : null;
+      const link = `${getAppBaseUrl()}/messages/${params.id}`;
+      if (info) {
+        let pushed = 0;
+        if (secret && info.subs.length) {
+          const r = await sendPushToSubs(info.subs, {
+            title: `New message from ${info.senderName}`,
+            body: trimmed.length > 80 ? trimmed.slice(0, 77) + "..." : trimmed,
+            url: `/messages/${params.id}`,
+            tag: `msg-${params.id}`,
+          });
+          pushed = r.sent;
+          if (r.gone.length) await pgRpc("drop_push_subscriptions", { p_secret: secret, p_ids: r.gone }).catch(() => undefined);
+        }
+        if (pushed === 0 && info.email && info.unreadFromSender <= 1) {
+          await sendEmail(
+            info.email,
+            "New message on TeacherCircle",
+            `<p>You have a new message waiting on TeacherCircle.</p><p><a href="${link}">View &amp; reply</a></p>`
+          );
+        }
+      } else {
+        const partnerEmail = await pgRpc("get_conversation_partner_email", { p_conversation_id: params.id }, user.token);
+        if (partnerEmail) {
+          await sendEmail(
+            partnerEmail,
+            "New message on TeacherCircle",
+            `<p>You have a new message waiting on TeacherCircle.</p><p><a href="${link}">View &amp; reply</a></p>`
+          );
+        }
       }
     } catch {
       // Notification failure is never the caller's problem.

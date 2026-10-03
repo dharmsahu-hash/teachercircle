@@ -13,8 +13,16 @@ const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const SENDER_EMAIL = process.env.EMAIL_SENDER_ADDRESS || "no-reply@teachercircle.app";
 const SENDER_NAME = process.env.EMAIL_SENDER_NAME || "TeacherCircle";
 
-export async function sendEmail(to: string, subject: string, htmlContent: string): Promise<void> {
-  if (!BREVO_API_KEY) return;
+// Like sendEmail, but tells the caller whether Brevo accepted the message, so
+// the digest only marks a teacher "sent" when it really went out. Returns
+// false (and sends nothing) when email is not configured.
+export async function sendEmailChecked(
+  to: string,
+  subject: string,
+  htmlContent: string,
+  headers?: Record<string, string>
+): Promise<boolean> {
+  if (!BREVO_API_KEY) return false;
 
   try {
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -25,6 +33,7 @@ export async function sendEmail(to: string, subject: string, htmlContent: string
         to: [{ email: to }],
         subject,
         htmlContent,
+        ...(headers ? { headers } : {}),
       }),
     });
     if (!res.ok) {
@@ -32,8 +41,15 @@ export async function sendEmail(to: string, subject: string, htmlContent: string
       // discipline applied here even though this project has no formal rule
       // requiring it, because there's no reason not to.
       console.error(`Brevo send failed: ${res.status} ${await res.text()}`);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error("Brevo send error", err instanceof Error ? err.message : err);
+    return false;
   }
+}
+
+export async function sendEmail(to: string, subject: string, htmlContent: string): Promise<void> {
+  await sendEmailChecked(to, subject, htmlContent);
 }

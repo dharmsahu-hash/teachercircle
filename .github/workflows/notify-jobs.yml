@@ -1,0 +1,46 @@
+name: Notification jobs
+
+# Two small scheduled calls to the site (Vercel's free plan only allows one
+# cron a day, GitHub Actions is free):
+#  - 09:00 IST  teacher digest: emails only teachers who have NEW matching
+#    student requests since their last digest. Quiet day = no email at all.
+#  - 20:00 IST  streak reminder: a free push to players whose streak ends tonight.
+# Needs the repository secret CRON_SECRET (same value as the Vercel env var)
+# and, once the domain is live, the variable SITE_URL. Scheduled workflows run
+# from the default branch (main).
+on:
+  schedule:
+    - cron: "30 3 * * *" # 09:00 IST digest
+    - cron: "30 14 * * *" # 20:00 IST streak reminders
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        type: choice
+        options: [digest, streak-reminders]
+        default: digest
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call the job endpoint
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://teachercircle.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SCHEDULE: ${{ github.event.schedule }}
+          CHOSEN: ${{ github.event.inputs.job }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET secret is not set; nothing to do."; exit 0; fi
+          if [ "$SCHEDULE" = "30 14 * * *" ] || [ "$CHOSEN" = "streak-reminders" ]; then job=streak-reminders; else job=digest; fi
+          for attempt in 1 2 3; do
+            code=$(curl -sL -X POST -o out.json -w '%{http_code}' --max-time 120 -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/jobs/$job" || echo 000)
+            echo "attempt $attempt: HTTP $code"
+            cat out.json; echo
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          exit 1

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { pgRpc, publicErrorMessage } from "@/lib/db";
+import { pushVia } from "@/lib/push";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { invalidIdResponse, isId } from "@/lib/validation";
 
@@ -20,6 +21,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   try {
     const conversationId = await pgRpc("respond_to_tutor_request", { p_request_id: params.id }, user.token);
+    await pushVia("push_targets_for_request_poster", { p_request_id: params.id }, {
+      title: "A teacher replied to your request",
+      body: "Open your messages to talk to them.",
+      url: `/messages/${conversationId}`,
+      tag: "reply",
+    });
     return NextResponse.json({ ok: true, conversationId });
   } catch (err) {
     return NextResponse.json({ error: publicErrorMessage(err, "Could not send your reply. Please try again.") }, { status: 400 });
